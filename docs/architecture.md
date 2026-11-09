@@ -1,0 +1,29 @@
+# Architecture and enforcement
+
+## Startup and configuration
+
+1. `src/index.ts` registers Pi flags, commands, shortcut, lifecycle hooks and tool overrides. On `session_start` it loads the user config (`src/config.ts`), project config, session mode, scratch location and read grants. Bad input sets a blocking error.
+2. `defaults.json` supplies shipped settings. User `<agentDir>/pi-perm/config.json` overlays them; project `<project>/.pi/pi-perm.json` may request reads and tighten permissions/sandbox settings only. Arrays replace inherited arrays. Permission surfaces replace earlier surfaces; sandbox fields merge. Permission groups are selected by mode, with conflicting selected group rules rejected.
+3. The four mode IDs are fixed. Global config can choose a non-YOLO default and non-YOLO Alt+M cycle; project config cannot. Unknown keys, invalid paths, missing grant targets and missing referenced prompt files fail closed. Configuration is reloaded at startup or `/reload`, not per tool call.
+4. Global `read.allow` targets are resolved from the agent directory. Project `read.allow` targets are resolved from the project and require separate Pi project trust plus explicit UI trust. `src/grants.ts` stores approved canonical path + file/directory kind in `<agentDir>/pi-perm/trust/projects.json`, outside the project. Removed requests cease to apply; changed targets need new trust.
+
+## Decision path
+
+1. `tool_call` in `src/index.ts` blocks all tools on initialization error or detected `pi-permission-modes` conflict. YOLO returns without gates. Otherwise it calls `src/bash.ts` for Bash or `src/policy.ts` for file/other tools. `ask` prompts for the exact request; an optional session approval is keyed by mode, title and details. No UI or oversized request means refusal.
+2. `src/policy.ts` evaluates global resolved rules and project tightening; deny > ask > allow. File policies consider literal and canonical aliases, `path`, tool-specific surface and, for external reads, `external_directory`. Hard denies reject restricted project directories (`archive`, `notes`, `.git`, `credentials`, case-insensitive), SSH/Pi credential paths and configured read denies. Non-YOLO writes also obey project/scratch roots, protected paths, trust-registry protection, sandbox write denies and Plan Markdown extension checks.
+3. `src/bash.ts` checks whole-command `bash` patterns and `path` gates. If applicable, tree-sitter checks every recognized command in the AST against the selected group's `safeCommands`. Redirections, substitutions, execution flags, unknown structure and unapproved literal paths cannot earn the safe-command shortcut. Explicit whole-line rules can override that shortcut; the parser is not a general shell security analyzer and does not contain command side effects.
+4. Registered file-tool overrides repeat the decision at execution time. Native Pi tools handle read/write/edit; the extension's bounded walker handles non-YOLO grep/find/ls, skips denied entries and descendant symlinks, and invokes `rg --no-config` for grep. These searches do not honor `.gitignore`. An ask approval applies to the matching call, not arbitrary future calls.
+5. `src/sandbox.ts` builds a runtime profile and wraps every non-YOLO Bash command using `@anthropic-ai/sandbox-runtime` (macOS/Linux only). It refuses unsupported or disabled sandboxing and missing dependencies; no approval bypasses this. Commands run in a fresh process group using `/bin/bash --noprofile --norc`; execution is serialized, command transport is protected, TMPDIR points to private session scratch, and background descendants are killed when the foreground shell ends. YOLO executes without sandbox wrapping.
+
+## Prompt and session flow
+
+- `src/prompts.ts` refreshes extension-owned `pi_perm_*` system prompt sections before each agent turn. User-supplied shared/mode text is advisory; `pi_perm_runtime` is generated from effective settings and cannot be replaced in configuration. Prompt changes cannot grant tools. Approve confirmation, re-reading files and request-only Plan edits depend on agent behavior.
+- `src/sessions.ts` records the mode in `pi-perm.mode` custom entries. `/perm <mode>` and Alt+M update it; tree navigation restores the destination branch. `pi --perm <mode>` is a startup override; `PI_PERM_MODE` forwards only non-YOLO modes to startup child sessions. Reload preserves the recorded mode. YOLO selection requires UI confirmation, though an already saved YOLO selection can be restored.
+
+## Security boundary and known limitations
+
+- The sandbox confines **Bash**, not custom extension tools. Such tools ask by default but execute with their own process privileges if approved. Pi may load resources before these tool hooks.
+- Sandbox reads are broad except specified read denies. A permitted script is not re-prompted for each file it reads. File-tool grants do not authorize or monitor arbitrary script reads.
+- Network is unfiltered, including for sandboxed Bash. A permitted process can communicate externally or cause service-side writes. Runtime-mandatory temporary write exceptions remain; neither the sandbox nor path checks are a perfect host isolation boundary.
+- Path checks are not race-proof against symlink replacement or hardlink aliases. Linux read-deny patterns are expanded at command launch; directories created during the command may not yet be masked. Test real containment separately from unit tests on disposable data.
+- `src/index.ts` detects the old extension by its command source path; it cannot guarantee arbitration against arbitrary extensions or later overrides. Do not install alongside another permission extension.

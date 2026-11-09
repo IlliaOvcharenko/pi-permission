@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pi-perm.local/config.schema.json",
+  "title": "pi-perm user configuration overlay",
+  "description": "Overlay on shipped defaults.json, loaded at startup or /reload. Runtime validation additionally checks fixed modes, group references/conflicts, safe defaults/cycles, and mandatory safeguards. This is not the pi-permission-modes schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "$comment": { "type": "string" },
+    "defaultMode": { "enum": ["plan", "approve", "build"], "description": "Mode for independent new sessions." },
+    "cycleOrder": { "type": "array", "items": { "enum": ["plan", "approve", "build"] }, "minItems": 1, "uniqueItems": true, "description": "Alt+M order; yolo requires explicit selection." },
+    "permissionGroups": {
+      "type": "object", "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/permissionGroup" },
+      "description": "Reusable tool permissions. Definitions replace shipped groups by name; nested group references are forbidden."
+    },
+    "read": { "$ref": "#/$defs/read" },
+    "shared": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "sandbox": { "$ref": "#/$defs/sandbox" },
+        "permission": { "$ref": "#/$defs/permission" }
+      }
+    },
+    "modes": {
+      "type": "object",
+      "propertyNames": { "enum": ["plan", "approve", "build", "yolo"] },
+      "additionalProperties": { "$ref": "#/$defs/mode" }
+    },
+    "prompts": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "$comment": { "type": "string" },
+        "removeLegacySections": { "type": "array", "uniqueItems": true, "items": { "enum": ["permission_mode", "permission_mode_docs", "permission_mode_steering"] } },
+        "sections": {
+          "type": "object",
+          "propertyNames": { "pattern": "^pi_perm_[a-z][a-z0-9_]*$" },
+          "properties": {
+            "pi_perm_runtime": {
+              "description": "AUTOMATIC, NOT EDITABLE: enforcement facts refreshed before every agent turn in non-YOLO modes. No text template is accepted. Omit this entry to inherit it.",
+              "readOnly": true,
+              "type": "object", "additionalProperties": false,
+              "properties": { "source": { "const": "runtime" }, "when": { "const": "sandboxed" } }
+            }
+          },
+          "additionalProperties": { "$ref": "#/$defs/promptSection" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "paths": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "^[^*?\\[\\]\\u0000\\r\\n]+$" }, "description": "Literal paths only; no globs. ~ and $HOME expand. Sandbox paths are project-relative; read paths in global config are agent-directory-relative." },
+    "read": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "allow": { "$ref": "#/$defs/paths" }, "deny": { "$ref": "#/$defs/paths" } }
+    },
+    "action": { "enum": ["allow", "ask", "deny"] },
+    "ruleValue": {
+      "oneOf": [
+        { "$ref": "#/$defs/action" },
+        { "type": "object", "additionalProperties": false, "required": ["action"], "properties": { "action": { "$ref": "#/$defs/action" }, "reason": { "type": "string", "maxLength": 500 } } }
+      ]
+    },
+    "rule": {
+      "oneOf": [
+        { "$ref": "#/$defs/action" },
+        { "type": "object", "additionalProperties": { "$ref": "#/$defs/ruleValue" }, "description": "Glob map: last matching pattern wins. * crosses slashes; **/ also matches zero directories. Put * first. Numeric-only keys are forbidden by runtime validation." }
+      ]
+    },
+    "permission": {
+      "type": "object", "properties": { "groups": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 }, "description": "Selected permission groups. [] disables groups. Mode rules override group rules." } },
+      "additionalProperties": { "$ref": "#/$defs/rule" },
+      "description": "read/grep/find/ls/write/edit match paths; path is a cross-cutting file/Bash gate; external_directory gates unapproved external reads; bash matches the ENTIRE submitted command line; tool matches other tool names; skill matches skill tool names; other keys match exact tools against JSON-serialized input. Missing rules ask; path defaults allow. Project rules can only tighten."
+    },
+    "permissionGroup": {
+      "type": "object",
+      "propertyNames": { "pattern": "^(?!groups$)[a-zA-Z_][a-zA-Z0-9_.:-]*$" },
+      "properties": { "bash": { "oneOf": [{ "$ref": "#/$defs/rule" }, { "$ref": "#/$defs/safeCommandRule" }] } },
+      "additionalProperties": { "$ref": "#/$defs/rule" }
+    },
+    "safeCommandRule": {
+      "type": "object", "additionalProperties": false, "required": ["safeCommands", "action"],
+      "properties": {
+        "safeCommands": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" } },
+        "action": { "$ref": "#/$defs/action" }
+      },
+      "description": "Tree-sitter-checked bare commands, not unrestricted command-name globs. Whole-line mode patterns override matching requests; scalar ask is the fallback. Adding commands explicitly trusts their behavior."
+    },
+    "sandbox": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Must remain true except in yolo. No unavailable-sandbox fallback." },
+        "writable": { "type": "boolean", "description": "Bash project writes. false leaves only private scratch writable. plan must keep false." },
+        "allowWrite": { "$ref": "#/$defs/paths", "description": "Project-relative literal writable roots; may only resolve within project or scratch. Scratch is always added." },
+        "denyRead": { "$ref": "#/$defs/paths" },
+        "denyWrite": { "$ref": "#/$defs/paths" },
+        "allowLocalBinding": { "type": "boolean" },
+        "macos": { "type": "object", "additionalProperties": false, "properties": { "enableWeakerNetworkIsolation": { "type": "boolean" } } },
+        "linux": { "type": "object", "additionalProperties": false, "properties": { "allowNestedUserNamespaces": { "type": "boolean" } } }
+      }
+    },
+    "mode": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "color": { "enum": ["muted", "mdLink", "accent", "error"] },
+        "systemPrompt": { "type": "string", "description": "Replaces this mode's text in source=mode sections; inline or @file relative to config.json." },
+        "systemPromptAppend": { "type": "string", "description": "Appended to systemPrompt. Inline or @file; no automatic recursive substitution." },
+        "sandbox": { "$ref": "#/$defs/sandbox" },
+        "permission": { "$ref": "#/$defs/permission" }
+      }
+    },
+    "promptSection": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "source": { "enum": ["text", "mode"], "description": "text: this section's text. mode: selected mode's systemPrompt + systemPromptAppend." },
+        "when": { "oneOf": [{ "enum": ["sandboxed", "always", "never"] }, { "type": "array", "items": { "enum": ["plan", "approve", "build", "yolo"] } }], "description": "sandboxed=every non-YOLO mode; always=including YOLO; never=disabled; array=only those mode IDs." },
+        "text": { "type": "string", "description": "Only for source=text. Inline or @file relative to global config.json. Loaded on startup/reload, not every turn." }
+      }
+    }
+  }
+}
