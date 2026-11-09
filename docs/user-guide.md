@@ -60,7 +60,9 @@ Project read request example in `<project>/.pi/pi-perm.json`:
 
 The requested external path must already exist. Project configuration cannot change prompts, mode selection, defaults, groups, or remove global hard denies; project permissions only tighten. New read grants require project trust **and** a separate UI confirmation; approvals persist outside the project and are restricted to the currently requested canonical path and file/directory kind. Project settings are not a source of authority over these checks.
 
-For prompt wording, use `prompts.sections.pi_perm_shared` (text), a mode's `systemPrompt`/`systemPromptAppend`, or custom `pi_perm_*` sections. A string beginning with `@` loads a file relative to user `config.json` on startup/reload. `pi_perm_runtime` is reserved/generated; changing prompt prose does not change tool enforcement. No network allowlist is provided; network filtering is disabled.
+For prompt wording, use `prompts.sections.pi_perm_shared` (text), a mode's `systemPrompt`/`systemPromptAppend`, or custom `pi_perm_*` sections. A string beginning with `@` loads a file relative to user `config.json` on startup/reload. `pi_perm_runtime` is reserved/generated; changing prompt prose does not change tool enforcement. Network access is unrestricted; no network settings are exposed or injected into the runtime prompt.
+
+When upgrading from a configuration containing `sandbox.allowLocalBinding` or `sandbox.macos.enableWeakerNetworkIsolation`, remove `allowLocalBinding` and the entire `macos` object from shared, mode and project sandbox settings before `/reload`. Removed keys fail validation even when set to `false`. Filesystem sandboxing and `linux.allowNestedUserNamespaces` remain unchanged.
 
 ## Validation and troubleshooting
 

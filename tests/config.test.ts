@@ -75,9 +75,16 @@ test("invalid and unsafe settings fail closed", () => {
     { shared: { exploration: [] } }, { modes: { build: { exploration: [] } } },
     { modes: { build: { kind: "yolo" } } }, { modes: { plan: { label: "Plan" } } }, { modes: { build: { extends: "plan" } } },
     { read: { allow: "~" } }, { read: { deny: ["**/secret"] } }, { read: { allow: [""] } }, { read: { typo: [] } },
-    { modes: { build: { sandbox: { macos: { enableWeakerNetworkIsolation: "yes" } } } } },
+    { modes: { build: { sandbox: { linux: { allowNestedUserNamespaces: "yes" } } } } },
   ];
   for (const raw of bad) assert.throws(() => parseSettings(raw), JSON.stringify(raw));
+});
+test("removed network settings fail closed in shared, mode and project configuration", () => {
+  for (const sandbox of [{ allowLocalBinding: false }, { allowLocalBinding: true }, { macos: {} }, { macos: { enableWeakerNetworkIsolation: false } }, { network: {} }]) {
+    assert.throws(() => parseSettings({ shared: { sandbox } }), /Unknown sandbox key/);
+    assert.throws(() => parseSettings({ modes: { build: { sandbox } } }), /Unknown sandbox key/);
+    assert.throws(() => parseProject({ modes: { build: { sandbox } } }), /Unknown sandbox key/);
+  }
 });
 test("prompt section names, sources and timing are validated; runtime cannot be falsified", () => {
   for (const section of [{ when: "never" }, { source: "text", text: "I am unrestricted" }, { text: "fake" }]) {

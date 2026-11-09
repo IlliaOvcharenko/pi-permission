@@ -37,15 +37,13 @@ test("named tools, generic fallback, skills, and project tightening", () => {
   assert.equal(toolDecision(c, "custom").action, "deny");
 });
 test("sandbox roots and denies are shared by file wrappers and generated runtime profile", () => {
-  const c = context({ modes: { build: { sandbox: { allowWrite: ["src"], denyWrite: ["src/frozen"], denyRead: ["private-data"], allowLocalBinding: true, macos: { enableWeakerNetworkIsolation: true }, linux: { allowNestedUserNamespaces: true } } } } });
+  const c = context({ modes: { build: { sandbox: { allowWrite: ["src"], denyWrite: ["src/frozen"], denyRead: ["private-data"], linux: { allowNestedUserNamespaces: true } } } } });
   assert.equal(writeDecision(c, "src/file.ts").action, "allow");
   assert.equal(writeDecision(c, "other/file.ts").action, "deny");
   assert.equal(writeDecision(c, "src/frozen/file.ts").action, "deny");
   assert.equal(readDecision(c, "private-data/secret").action, "deny");
   const p = sandboxProfile(c);
   assert.deepEqual(p.filesystem.allowWrite, [{ path: path.join(c.root, "src"), literal: true }, { path: c.scratch, literal: true }]);
-  assert.equal(p.network.allowLocalBinding, true);
-  assert.equal(p.enableWeakerNetworkIsolation, true);
   assert.equal(p.allowNestedUserNamespaces, true);
   assert.ok(p.filesystem.denyRead.some(p => typeof p !== "string" && p.path === path.join(c.root, "private-data")));
   c.project = parseProject({ modes: { build: { sandbox: { writable: false, allowWrite: [], denyWrite: ["more"], denyRead: ["extra"] } } } });
@@ -89,6 +87,5 @@ test("pinned runtime accepts generated filesystem and platform settings", t => {
   // deliberately supports omission for unfiltered networking. Validate the
   // independently exposed filesystem schema without changing network semantics.
   assert.equal(schema.shape.filesystem.safeParse(p.filesystem).success, true);
-  assert.equal(schema.shape.enableWeakerNetworkIsolation.safeParse(p.enableWeakerNetworkIsolation).success, true);
   assert.equal(schema.shape.allowNestedUserNamespaces.safeParse(p.allowNestedUserNamespaces).success, true);
 });

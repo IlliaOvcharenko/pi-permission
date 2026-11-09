@@ -74,16 +74,14 @@ function selectedPermission(value: unknown): { rules: Permission; groups?: strin
 }
 function sandbox(value: unknown, base: SandboxSettings, project = false): SandboxSettings {
   const raw = object(value, "sandbox");
-  keys(raw, project ? ["writable", "allowWrite", "denyRead", "denyWrite", "allowLocalBinding"] : ["enabled", "writable", "allowWrite", "denyRead", "denyWrite", "allowLocalBinding", "macos", "linux"], "sandbox");
-  const out = { ...base, ...raw, macos: { ...base.macos }, linux: { ...base.linux } } as SandboxSettings;
-  for (const key of ["enabled", "writable", "allowLocalBinding"] as const) if (typeof out[key] !== "boolean") throw new Error(`sandbox.${key} must be boolean`);
+  keys(raw, project ? ["writable", "allowWrite", "denyRead", "denyWrite"] : ["enabled", "writable", "allowWrite", "denyRead", "denyWrite", "linux"], "sandbox");
+  const out = { ...base, ...raw, linux: { ...base.linux } } as SandboxSettings;
+  for (const key of ["enabled", "writable"] as const) if (typeof out[key] !== "boolean") throw new Error(`sandbox.${key} must be boolean`);
   for (const key of ["allowWrite", "denyRead", "denyWrite"] as const) out[key] = paths(out[key], `sandbox.${key}`);
-  for (const [key, field] of [["macos", "enableWeakerNetworkIsolation"], ["linux", "allowNestedUserNamespaces"]] as const) {
-    if (raw[key] !== undefined) {
-      const options = object(raw[key], key); keys(options, [field], key);
-      if (options[field] !== undefined && typeof options[field] !== "boolean") throw new Error(`${key}.${field} must be boolean`);
-      Object.assign(out[key], options);
-    }
+  if (raw.linux !== undefined) {
+    const options = object(raw.linux, "linux"); keys(options, ["allowNestedUserNamespaces"], "linux");
+    if (options.allowNestedUserNamespaces !== undefined && typeof options.allowNestedUserNamespaces !== "boolean") throw new Error("linux.allowNestedUserNamespaces must be boolean");
+    Object.assign(out.linux, options);
   }
   return out;
 }
@@ -195,7 +193,7 @@ export function parseProject(value: unknown): ProjectSettings {
       if (m.sandbox !== undefined) {
         const s = object(m.sandbox, "project sandbox");
         sandbox(s, DEFAULT_SETTINGS.modes.build.sandbox, true);
-        if (s.writable === true || s.allowLocalBinding === true) throw new Error("Projects cannot enable writes or local binding");
+        if (s.writable === true) throw new Error("Projects cannot enable writes");
         parsed.sandbox = s;
       }
       result.modes![name] = parsed;

@@ -11,8 +11,6 @@ export interface ReadGrant { path: string; kind: "file" | "directory" }
 export interface ReadSettings { allow: string[]; deny: string[] }
 export interface SandboxSettings {
   enabled: boolean; writable: boolean; allowWrite: string[]; denyRead: string[]; denyWrite: string[];
-  allowLocalBinding: boolean;
-  macos: { enableWeakerNetworkIsolation: boolean };
   linux: { allowNestedUserNamespaces: boolean };
 }
 export interface ModeSettings {
@@ -34,7 +32,7 @@ export interface Settings {
 }
 export interface ProjectMode {
   permission?: Permission;
-  sandbox?: Partial<Pick<SandboxSettings, "writable" | "allowWrite" | "denyRead" | "denyWrite" | "allowLocalBinding">>;
+  sandbox?: Partial<Pick<SandboxSettings, "writable" | "allowWrite" | "denyRead" | "denyWrite">>;
 }
 export interface ProjectSettings { read: ReadSettings; modes?: Record<string, ProjectMode> }
 export interface PolicyContext {
@@ -44,9 +42,8 @@ export interface PolicyContext {
 }
 export type RuntimePath = string | { path: string; literal: true };
 export interface RuntimeProfile {
-  network: { deniedDomains: string[]; allowLocalBinding: boolean };
+  network: { deniedDomains: string[] };
   filesystem: { allowWrite: RuntimePath[]; denyWrite: RuntimePath[]; denyRead: RuntimePath[] };
-  enableWeakerNetworkIsolation?: boolean;
   allowNestedUserNamespaces?: boolean;
 }
 export interface SessionEntryLike { type: string; customType?: string; data?: unknown }

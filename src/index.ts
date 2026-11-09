@@ -40,7 +40,7 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
   const status = (ctx: ExtensionContext) => {
     const definition = settings.modes[mode];
     const name = ctx.ui.theme?.fg ? ctx.ui.theme.fg(definition?.color ?? "muted", mode) : mode;
-    if (ctx.hasUI) ctx.ui.setStatus("pi-perm", `pi-perm: ${name}${error || conflict ? " [blocked]" : mode === "yolo" ? " [UNSANDBOXED]" : " [sandbox required; network open]"}`);
+    if (ctx.hasUI) ctx.ui.setStatus("pi-perm", `pi-perm: ${name}${error || conflict ? " [blocked]" : mode === "yolo" ? " [UNSANDBOXED]" : " [sandbox required]"}`);
   };
   const current = (): PolicyContext => {
     if (!policy) throw new Error(error ?? "pi-perm not initialized");
@@ -98,7 +98,7 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
         return;
       }
       if (command !== "status") { ctx.ui.notify("Unknown pi-perm command", "warning"); return; }
-      ctx.ui.notify(JSON.stringify({ mode, modes: Object.keys(settings.modes), cycleOrder: settings.cycleOrder, configFile, error, conflict, sandbox: sandbox.status, network: "unfiltered", scratch: policy?.scratch, read: policy?.readRoots, denyRead: policy?.denyRead, trustFile }, null, 2), "info");
+      ctx.ui.notify(JSON.stringify({ mode, modes: Object.keys(settings.modes), cycleOrder: settings.cycleOrder, configFile, error, conflict, sandbox: sandbox.status, scratch: policy?.scratch, read: policy?.readRoots, denyRead: policy?.denyRead, trustFile }, null, 2), "info");
     },
   });
   pi.registerShortcut("alt+m", {
@@ -223,7 +223,7 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
       },
     },
   });
-  pi.registerTool({ ...bash, executionMode: "sequential", promptGuidelines: ["Bash always runs sandboxed except in YOLO; use TMPDIR for temporary files. Network is unfiltered."] });
+  pi.registerTool({ ...bash, executionMode: "sequential", promptGuidelines: ["Bash always runs sandboxed except in YOLO; use TMPDIR for temporary files."] });
 }
 
 function searchFiles(name: string, params: any, ctx: PolicyContext, once: ReadGrant[], signal: AbortSignal | undefined, sdk: SDK): any {

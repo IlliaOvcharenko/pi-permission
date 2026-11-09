@@ -21,8 +21,6 @@
       "allowWrite": ["."],
       "denyRead": [],
       "denyWrite": [],
-      "allowLocalBinding": false,
-      "macos": { "enableWeakerNetworkIsolation": false },
       "linux": { "allowNestedUserNamespaces": false }
     },
     "permission": {
@@ -44,7 +42,7 @@
     "yolo": {}
   },
   "prompts": {
-    "$comment": "Each sections KEY is the EXACT Pi system-prompt section to set. Editable text goes in source=text sections (text may be @./prompts/shared.md), or modes.<id>.systemPrompt / systemPromptAppend for source=mode. when=sandboxed applies to all non-YOLO modes, always includes YOLO, never disables, an array selects mode IDs. The reserved pi_perm_runtime section below is AUTOMATIC and NOT EDITABLE: it reports effective enforced settings, read roots, sandbox write roots, scratch, network and tool rules before every agent turn. Its source/when cannot be changed; no text template is accepted. removeLegacySections lists the ONLY legacy sections deleted; unrelated sections are untouched.",
+    "$comment": "Each sections KEY is the EXACT Pi system-prompt section to set. Editable text goes in source=text sections (text may be @./prompts/shared.md), or modes.<id>.systemPrompt / systemPromptAppend for source=mode. when=sandboxed applies to all non-YOLO modes, always includes YOLO, never disables, an array selects mode IDs. The reserved pi_perm_runtime section below is AUTOMATIC and NOT EDITABLE: it reports effective enforced settings, read roots, sandbox write roots, scratch, platform options and tool rules before every agent turn. Its source/when cannot be changed; no text template is accepted. removeLegacySections lists the ONLY legacy sections deleted; unrelated sections are untouched.",
     "removeLegacySections": ["permission_mode", "permission_mode_docs", "permission_mode_steering"],
     "sections": {
       "pi_perm_shared": {

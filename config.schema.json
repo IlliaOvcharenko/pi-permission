@@ -95,8 +95,6 @@
         "allowWrite": { "$ref": "#/$defs/paths", "description": "Project-relative literal writable roots; may only resolve within project or scratch. Scratch is always added." },
         "denyRead": { "$ref": "#/$defs/paths" },
         "denyWrite": { "$ref": "#/$defs/paths" },
-        "allowLocalBinding": { "type": "boolean" },
-        "macos": { "type": "object", "additionalProperties": false, "properties": { "enableWeakerNetworkIsolation": { "type": "boolean" } } },
         "linux": { "type": "object", "additionalProperties": false, "properties": { "allowNestedUserNamespaces": { "type": "boolean" } } }
       }
     },

@@ -27,7 +27,8 @@ test("profiles: Plan scratch-only; other modes project + scratch; no network fil
     const p = sandboxProfile(c);
     const literal = (p: string) => ({ path: p, literal: true });
     assert.deepEqual(p.filesystem.allowWrite, [literal(c.scratch)]);
-    assert.equal("allowedDomains" in p.network, false);
+    assert.deepEqual(p.network, { deniedDomains: [] });
+    assert.equal("enableWeakerNetworkIsolation" in p, false);
     assert.ok(p.filesystem.denyRead.some(p => typeof p !== "string" && p.path === "/home/test/.ssh" && p.literal));
     assert.ok(p.filesystem.denyRead.some(p => typeof p === "string" && p.includes("**/") && p.includes("[nN]")));
     assert.ok(p.filesystem.denyRead.some(p => typeof p !== "string" && p.path === "/private-data" && p.literal));

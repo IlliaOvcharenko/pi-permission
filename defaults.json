@@ -16,8 +16,6 @@
       "allowWrite": ["."],
       "denyRead": [],
       "denyWrite": [],
-      "allowLocalBinding": false,
-      "macos": { "enableWeakerNetworkIsolation": false },
       "linux": { "allowNestedUserNamespaces": false }
     },
     "permission": {

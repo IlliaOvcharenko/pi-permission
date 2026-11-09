@@ -14,7 +14,7 @@
 - **Mode** selects a fixed safety behavior: Plan, Approve, Build or YOLO. Plan is the default; YOLO is never a default or cycle entry.
 - **Permission surface** is a named gate (`bash`, `read`, `write`, `tool`, `path`, etc.). A surface has a scalar action or an ordered pattern map. Within a map the last matching rule wins; across gates the stricter action wins.
 - **Safe-command classifier** uses tree-sitter Bash to grant the exploration group's allow rule only for recognized, conservative command structures. It is a consent shortcut, *not* a filesystem or process boundary. A Bash approval still runs inside the sandbox.
-- **Sandbox profile** controls Bash write locations and selected read denies. Plan Bash writes to private scratch only; Approve/Build Bash may write within the configured project roots and scratch. Network filtering is disabled.
+- **Sandbox profile** controls Bash write locations and selected read denies. Plan Bash writes to private scratch only; Approve/Build Bash may write within the configured project roots and scratch. Network access is unrestricted; no network configuration is exposed.
 - **File-tool wrappers** independently gate Pi's built-in read/write/edit tools and perform policy-aware traversal for grep/find/ls. These are not the Bash sandbox.
 - **Project read grant** is an existing literal file or directory requested by project configuration and separately trusted through UI; it never overrides a hard deny. Approve-mode chat confirmation of file changes is a different, behavioral requirement.
 - **Fail closed** means invalid configuration, conflicting legacy extension or unavailable sandbox prevents affected tool execution rather than silently allowing it.

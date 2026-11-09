@@ -47,8 +47,7 @@ export function sandboxProfile(ctx: PolicyContext): RuntimeProfile {
   ]);
   return {
     // Intentionally OMIT allowedDomains. [] would block all traffic instead.
-    network: { deniedDomains: [], allowLocalBinding: mode.sandbox.allowLocalBinding },
-    enableWeakerNetworkIsolation: mode.sandbox.macos.enableWeakerNetworkIsolation,
+    network: { deniedDomains: [] },
     allowNestedUserNamespaces: mode.sandbox.linux.allowNestedUserNamespaces,
     filesystem: {
       allowWrite: (mode.sandbox.writable ? writeRoots(ctx) : [ctx.scratch]).map(literal),
@@ -157,7 +156,7 @@ export class Sandbox {
       const text = await this.manager.wrapWithSandbox(launcher, "/bin/bash", executionProfile, opts.signal, { commandId: id, commandText: command });
       wrapped = true;
       if (opts.signal?.aborted) throw new Error("aborted");
-      this.status = "ready; network unfiltered";
+      this.status = "ready";
       try { return await this.run(text, cwd, { ...opts, env }); }
       finally {
         const violations = this.manager.annotateStderrWithSandboxFailures?.(id, "");

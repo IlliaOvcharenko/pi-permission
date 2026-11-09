@@ -66,10 +66,7 @@ function runtimeText(ctx: PolicyContext): string {
       `${safeBash.safeCommands.map(literal).join(", ")}: **${safeBash.action}** when tree-sitter confirms safe structure.`,
       "Matching command-line patterns override this rule; scalar ask is the fallback. Scalar allow/deny takes priority. Project restrictions and path gates still apply.",
     ]) : "",
-    list("Network and platform options", [
-      "Network filtering: disabled.",
-      `Local binding requested: ${mode.sandbox.allowLocalBinding ? "enabled" : "disabled"}.`,
-      `macOS weaker network isolation: ${mode.sandbox.macos.enableWeakerNetworkIsolation ? "enabled" : "disabled"}.`,
+    list("Platform options", [
       `Linux nested user namespaces: ${mode.sandbox.linux.allowNestedUserNamespaces ? "enabled" : "disabled"}.`,
     ]),
     "Approved scripts do not ask for every file they open. Bash reads broadly except sandbox denies. Custom extension tools are NOT OS-sandboxed. Never bypass denials.",

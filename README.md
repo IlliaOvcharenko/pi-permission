@@ -185,7 +185,7 @@ are blocked, including previously selected YOLO sessions.
 
 **Automatic and not independently editable:** runtime facts include mode ID,
 actual Bash write roots, scratch, read roots/denies, tool rules,
-project tightening, network and platform options. Their wording is generated in
+project tightening and platform options. Their wording is generated in
 code, rather than accepted as an override that could misrepresent enforcement.
 Editing shared/mode text can still give contradictory instructions; runtime
 facts and mechanical gates remain authoritative. Approve confirmation and
@@ -292,8 +292,7 @@ boundaries always remain in force. YOLO still bypasses permission checks.
 ### Sandbox settings and fixed safeguards
 
 `shared.sandbox` and `modes.<id>.sandbox` support `enabled`, `writable`,
-`allowWrite`, `denyRead`, `denyWrite`, `allowLocalBinding`,
-`macos.enableWeakerNetworkIsolation`, and `linux.allowNestedUserNamespaces`.
+`allowWrite`, `denyRead`, `denyWrite`, and `linux.allowNestedUserNamespaces`.
 Lists use literal paths, relative to the project; `~` and `$HOME` expand.
 `allowWrite` narrows writable project subtrees (e.g. `["src"]`); private scratch
 is always added. `denyWrite` applies to file wrappers too; `denyRead` applies to
@@ -309,10 +308,14 @@ remain. Unknown upstream fields such as `network`, `allowRead`, `insideRoots`,
 `hideTools`, `plan`, or `shells` are rejected—not silently ignored. This smaller
 schema does not expose all runtime options.
 
-Turning on local binding, weaker macOS isolation, or Linux namespaces changes
-security exposure. With unfiltered network, loopback access must not be treated
-as an independent host-service security boundary. Inspect effective settings
-with `/perm config` and test disposable data before relying on containment.
+**Migration:** remove `sandbox.allowLocalBinding` and the `sandbox.macos`
+object (formerly `enableWeakerNetworkIsolation`) from shared, mode and project
+configuration before `/reload`. These unused network settings are no longer
+accepted; leaving them present fails configuration validation.
+
+Turning on Linux nested user namespaces changes security exposure. Inspect
+effective settings with `/perm config` and test disposable data before relying
+on containment.
 
 ### Project settings and trusted grants
 
@@ -330,7 +333,7 @@ with `/perm config` and test disposable data before relying on containment.
 Project `modes.<existing-id>` may also contain `permission` and a restricted
 `sandbox` overlay. Permissions compose with global rules using deny > ask > allow,
 so project allow never cancels a global ask/deny. Sandbox overlays may set
-`writable: false`, `allowLocalBinding: false`, remove exact `allowWrite` entries,
+`writable: false`, remove exact `allowWrite` entries,
 and add `denyRead`/`denyWrite`. Other mode fields, reasons, platform switches,
 mode creation, defaults, cycle changes, and prompts are rejected.
 

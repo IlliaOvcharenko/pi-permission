@@ -31,7 +31,7 @@ test("exact prompt namespaces, timing, extra sections and unrelated text preserv
   assert.deepEqual(sections, { unrelated: "Keep", permission_mode: "Keep too", pi_perm_always: "Always here" });
 });
 test("runtime facts follow the effective global and project settings, not editable prompt claims", () => {
-  const settings = parseSettings({ modes: { build: { systemPrompt: "My customizable text", sandbox: { allowWrite: ["src"], denyWrite: ["src/frozen"], denyRead: ["data/private"], allowLocalBinding: true }, permission: { bash: "deny", tool: "allow" } } } });
+  const settings = parseSettings({ modes: { build: { systemPrompt: "My customizable text", sandbox: { allowWrite: ["src"], denyWrite: ["src/frozen"], denyRead: ["data/private"], linux: { allowNestedUserNamespaces: true } }, permission: { bash: "deny", tool: "allow" } } } });
   const ctx = context(settings);
   ctx.project = { read: { allow: [], deny: [] }, modes: { build: { sandbox: { writable: false }, permission: { tool: "deny" } } } };
   const sections = promptSections(ctx);
@@ -41,7 +41,8 @@ test("runtime facts follow the effective global and project settings, not editab
   assert.ok(sections.pi_perm_runtime.includes("`bash`: **deny**"));
   assert.ok(sections.pi_perm_runtime.includes("### Project tightening (composes with tool permissions; stricter action wins)\n- `tool`: **deny**"));
   assert.ok(sections.pi_perm_runtime.includes("/project/data/private"));
-  assert.ok(sections.pi_perm_runtime.includes("Local binding requested: enabled"));
+  assert.ok(sections.pi_perm_runtime.includes("### Platform options\n- Linux nested user namespaces: enabled."));
+  assert.doesNotMatch(sections.pi_perm_runtime, /network|local binding/i);
   assert.ok(!sections.pi_perm_runtime.includes("Bash exploration exception"));
 });
 test("runtime renders roots and ordered permission maps as Markdown and omits absent overrides", () => {
