@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Sandbox, sandboxProfile, type RuntimeManager } from "../src/sandbox.ts";
+import { Sandbox, sandboxProfile, runtimeDenyPattern, type RuntimeManager } from "../src/sandbox.ts";
 import { canonicalPath } from "../src/paths.ts";
 import type { PolicyContext } from "../src/types.ts";
 function fixture() {
@@ -37,6 +37,11 @@ test("profiles: Plan scratch-only; other modes project + scratch; no network fil
     assert.ok(special.filesystem.denyRead.some(p => typeof p !== "string" && p.path === "/private[secret]*?" && p.literal));
     assert.ok(special.filesystem.denyRead.some(p => typeof p === "string" && p.includes("project[[][*]][?]/**/")));
   } finally { cleanup(); }
+});
+test("permission deny patterns adapt stars and literal brackets to runtime syntax conservatively", () => {
+  assert.equal(runtimeDenyPattern("**/.env.*"), "**/.[eE][nN][vV].**");
+  assert.equal(runtimeDenyPattern("file?.txt"), "[fF][iI][lL][eE]**.[tT][xX][tT]");
+  assert.equal(runtimeDenyPattern("[x]"), "[[][xX]]");
 });
 test("only wrapped command reaches runner; exactly one cleanup per successful wrap", async () => {
   const { c, manager, events, cleanup } = fixture();

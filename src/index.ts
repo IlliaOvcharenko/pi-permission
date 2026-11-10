@@ -1,13 +1,14 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { lstatSync, readdirSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { DEFAULT_SETTINGS, isYolo, loadProject, loadSettings, modeSettings, validateProject } from "./config.ts";
-import { describeGrant, readApproved, sameGrant, saveApproved, trustedGrants } from "./grants.ts";
+import { DEFAULT_SETTINGS, isYolo, loadSettings, modeSettings, resolvePath } from "./config.ts";
+import { approvedPolicy, describeGrant, savePolicy } from "./grants.ts";
 import { absolutePath, canonicalPath, globRegex } from "./paths.ts";
-import { readDecision, READ_TOOLS, toolDecision, writeRoots, WRITE_TOOLS } from "./policy.ts";
+import { filesystemPolicy, readDecision, READ_TOOLS, toolDecision, WRITE_TOOLS } from "./policy.ts";
+import { sandboxProfile } from "./sandbox.ts";
 import { bashDecision } from "./bash.ts";
 import { makeScratch, Sandbox } from "./sandbox.ts";
 import { MODE_ENTRY, savedMode, startMode } from "./sessions.ts";
@@ -16,7 +17,13 @@ import { MODES, isMode, type Mode, type PolicyContext, type ReadGrant } from "./
 
 type SDK = typeof import("@earendil-works/pi-coding-agent");
 interface Dependencies { sandbox?: Sandbox; scratch?: (id: string) => string; home?: string; agentDir?: string }
-const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
+/** Theme.style accepts concrete RGB colors; never pass hex to token lookup. */
+export function modeLabel(theme: ExtensionContext["ui"]["theme"] | undefined, color: string, text: string): string {
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) {
+    return theme?.style ? theme.style(text, { fg: { kind: "rgb", r: parseInt(color.slice(1, 3), 16), g: parseInt(color.slice(3, 5), 16), b: parseInt(color.slice(5, 7), 16) } }) : text;
+  }
+  return theme?.fg ? theme.fg(color as "muted", text) : text;
+}
 
 /** Exported seam: tests exercise real hooks without loading or activating Pi. */
 export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Dependencies = {}): void {
@@ -30,8 +37,20 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
   let mode: Mode = "plan";
   let policy: PolicyContext | undefined;
   let error: string | undefined = "pi-perm has not initialized";
-  let requested: ReadGrant[] = [];
-  let globalRoots: ReadGrant[] = [];
+  let projectFile = "";
+  let activeSignature = "";
+  const projectText = (): string => {
+    try { return readFileSync(projectFile, "utf8"); }
+    catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return ""; throw e; }
+  };
+  const signature = (c: PolicyContext): string => {
+    const identities = Object.values(c.settings!.permissionGroups).flatMap(g => (g.filesystem?.readRoots ?? []).filter(raw => !raw.includes("${scratch}")).map(raw => {
+      const target = resolvePath(c, g, raw);
+      try { const st = statSync(target); return [target, canonicalPath(target), st.isDirectory() ? "directory" : st.isFile() ? "file" : "other"]; }
+      catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return [target, "missing"]; throw e; }
+    }));
+    return createHash("sha256").update(JSON.stringify([canonicalPath(projectFile), projectText(), identities])).digest("hex");
+  };
   let conflict = false;
   const sessionApprovals = new Set<string>();
   const readCalls = new Map<string, { mode: Mode; grants: ReadGrant[]; input: string; name: string; approved: boolean }>();
@@ -39,11 +58,16 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
 
   const status = (ctx: ExtensionContext) => {
     const definition = settings.modes[mode];
-    const name = ctx.ui.theme?.fg ? ctx.ui.theme.fg(definition?.color ?? "muted", mode) : mode;
+    const name = modeLabel(ctx.ui.theme, definition?.color ?? "muted", mode);
     if (ctx.hasUI) ctx.ui.setStatus("pi-perm", `pi-perm: ${name}${error || conflict ? " [blocked]" : mode === "yolo" ? " [UNSANDBOXED]" : " [sandbox required]"}`);
   };
   const current = (): PolicyContext => {
-    if (!policy) throw new Error(error ?? "pi-perm not initialized");
+    if (!policy || error) throw new Error(error ?? "pi-perm not initialized");
+    if (signature(policy) !== activeSignature) {
+      error = "Project policy or read-root identity changed; /reload and review trust again";
+      sessionApprovals.clear(); readCalls.clear();
+      throw new Error(error);
+    }
     return { ...policy, mode };
   };
   const confirm = async (ctx: ExtensionContext, title: string, details: string): Promise<boolean> => {
@@ -62,19 +86,6 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
     process.env.PI_PERM_MODE = mode;
     sessionApprovals.clear(); readCalls.clear(); status(ctx);
   };
-  const trustRequests = async (ctx: ExtensionContext) => {
-    if (!policy) return;
-    const approved = readApproved(trustFile, ctx.cwd);
-    const missing = requested.filter(g => !approved.some(a => sameGrant(a, g)));
-    if (missing.length && ctx.hasUI && ctx.isProjectTrusted() && await ctx.ui.confirm(
-      "Trust project read grants?",
-      `${canonicalPath(ctx.cwd)} requests read access in all its sessions:\n${missing.map(g => `${g.kind}: ${g.path}`).join("\n")}\nHard denies still apply. Changed paths or file/directory types require new trust.`,
-    )) {
-      // Keep only current requests; removed grants do not silently reappear.
-      saveApproved(trustFile, ctx.cwd, requested);
-    }
-    policy.readRoots = [...globalRoots, ...trustedGrants(requested, readApproved(trustFile, ctx.cwd))];
-  };
 
   pi.registerFlag("perm", { description: "pi-perm startup mode", type: "string" });
   pi.registerCommand("perm", {
@@ -82,23 +93,25 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
     handler: async (args, ctx) => {
       const command = args.trim() || "status";
       if (isMode(command, Object.keys(settings.modes))) { await changeMode(command, ctx); return; }
+      let c: PolicyContext | undefined;
+      if (!error && policy) { try { c = current(); } catch (e) { error = String(e); } }
       if (command === "config") {
-        ctx.ui.notify(JSON.stringify({ configFile, settings, activeMode: policy ? modeSettings(current()) : undefined, promptSections: !error && policy ? promptSections(current()) : {}, error }, null, 2), "info");
+        ctx.ui.notify(JSON.stringify({ configFile, projectFile, settings, activeMode: c ? modeSettings(c) : undefined, filesystem: c ? filesystemPolicy(c) : undefined, bashSandbox: c ? sandboxProfile(c) : undefined, promptSections: c ? promptSections(c) : {}, error }, null, 2), "info");
         return;
       }
       if (command === "clear-approvals") { sessionApprovals.clear(); ctx.ui.notify("Session tool approvals cleared", "info"); return; }
-      if (command === "trust") { await trustRequests(ctx); return; }
+      if (command === "trust") { await ctx.reload(); return; }
       if (command === "revoke") {
         if (sandbox.active) { ctx.ui.notify("Wait for running Bash before revoking grants", "warning"); return; }
-        if (ctx.hasUI && await ctx.ui.confirm("Revoke project read grants?", canonicalPath(ctx.cwd))) {
-          saveApproved(trustFile, ctx.cwd, []);
-          if (policy) policy.readRoots = [...globalRoots];
+        if (ctx.hasUI && await ctx.ui.confirm("Revoke project policy trust?", canonicalPath(ctx.cwd))) {
+          savePolicy(trustFile, ctx.cwd);
+          error = "Project policy trust revoked; remove project config or /reload to review it";
           sessionApprovals.clear(); readCalls.clear();
         }
         return;
       }
       if (command !== "status") { ctx.ui.notify("Unknown pi-perm command", "warning"); return; }
-      ctx.ui.notify(JSON.stringify({ mode, modes: Object.keys(settings.modes), cycleOrder: settings.cycleOrder, configFile, error, conflict, sandbox: sandbox.status, scratch: policy?.scratch, read: policy?.readRoots, denyRead: policy?.denyRead, trustFile }, null, 2), "info");
+      ctx.ui.notify(JSON.stringify({ mode, modes: Object.keys(settings.modes), cycleOrder: settings.cycleOrder, configFile, error, conflict, sandbox: sandbox.status, scratch: policy?.scratch, groups: settings.modes[mode].permissionGroups.map(name => ({ name, source: settings.permissionGroups[name].source })), filesystem: c ? filesystemPolicy(c) : undefined, trustFile }, null, 2), "info");
     },
   });
   pi.registerShortcut("alt+m", {
@@ -113,35 +126,34 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
     error = "pi-perm is loading configuration";
     try {
       conflict = pi.getCommands().some(c => c.sourceInfo?.path?.includes("pi-permission-modes"));
-      settings = loadSettings(configFile);
-      const project = loadProject(path.join(ctx.cwd, sdk.CONFIG_DIR_NAME, "pi-perm.json"));
-      validateProject(project, settings, ctx.cwd, home);
-      mode = startMode({ reason: event.reason, entries: ctx.sessionManager.getBranch(), defaultMode: settings.defaultMode, flag: pi.getFlag("perm"), inherited, modes: settings.modes });
+      projectFile = path.join(ctx.cwd, sdk.CONFIG_DIR_NAME, "pi-perm.json");
+      const sourceText = projectText();
+      if (sourceText && !ctx.isProjectTrusted()) throw new Error("Pi project trust is required before loading project policy");
+      const candidate = loadSettings(configFile, projectFile);
+      if (projectText() !== sourceText) throw new Error("Project policy changed while loading; reload to review the new content");
+      mode = startMode({ reason: event.reason, entries: ctx.sessionManager.getBranch(), defaultMode: candidate.defaultMode, flag: pi.getFlag("perm"), inherited, modes: candidate.modes });
       // Persist startup as well as explicit mode changes, so new sessions and
       // reloads never borrow the previously open session's environment mode.
       if (savedMode(ctx.sessionManager.getBranch(), Object.keys(settings.modes)) !== mode) pi.appendEntry(MODE_ENTRY, { mode });
       process.env.PI_PERM_MODE = mode;
       const scratch = (dependencies.scratch ?? makeScratch)(ctx.sessionManager.getSessionId());
-      const references = [sdk.getDocsPath(), sdk.getExamplesPath(), sdk.getReadmePath(), path.join(PACKAGE_ROOT, "README.md")];
-      globalRoots = [
-        { path: canonicalPath(path.join(agentDir, "skills")), kind: "directory" },
-        { path: canonicalPath(path.join(agentDir, "prompts")), kind: "directory" },
-        ...references.map(p => ({ path: canonicalPath(p), kind: p.endsWith(".md") ? "file" as const : "directory" as const })),
-        ...settings.read.allow.map(p => describeGrant(p, agentDir, home)),
-      ];
-      requested = project.read.allow.map(p => describeGrant(p, ctx.cwd, home));
-      policy = {
+      const next: PolicyContext = {
         root: canonicalPath(ctx.cwd), scratch: canonicalPath(scratch), home, agentDir, mode,
-        readRoots: [...globalRoots], trustFile, settings, project,
-        denyRead: [
-          ...settings.read.deny.map(p => absolutePath(agentDir, p, home)),
-          ...project.read.deny.map(p => absolutePath(ctx.cwd, p, home)),
-        ],
+        readRoots: [], trustFile, settings: candidate, denyRead: [],
       };
-      for (const name of MODES) {
-        if (name !== "yolo") writeRoots({ ...policy, mode: name });
+      const nextSignature = signature(next);
+      const digest = createHash("sha256").update(JSON.stringify([nextSignature, candidate])).digest("hex");
+      if (sourceText && approvedPolicy(trustFile, ctx.cwd) !== digest) {
+        const details = `${canonicalPath(ctx.cwd)}\n${projectFile}\nSHA-256: ${digest}\nThis configuration can RELAX global permissions, replace groups, and change prompts. Review referenced prompt files too.\n${sourceText}`;
+        if (!ctx.hasUI || details.length > 16000 || !(await ctx.ui.confirm("Trust project permission policy?", details))) throw new Error("Project policy not approved; /perm trust or /reload to review again");
+        if (signature(next) !== nextSignature || JSON.stringify(loadSettings(configFile, projectFile)) !== JSON.stringify(candidate)) throw new Error("Project policy or referenced prompt changed during trust review");
+        savePolicy(trustFile, ctx.cwd, digest);
       }
-      await trustRequests(ctx);
+      for (const name of MODES) if (name !== "yolo") sandboxProfile({ ...next, mode: name });
+      if (signature(next) !== nextSignature) throw new Error("Project policy changed during initialization");
+      settings = candidate;
+      activeSignature = nextSignature;
+      policy = next;
       error = undefined;
       if (conflict && ctx.hasUI) ctx.ui.notify("Disable pi-permission-modes before using pi-perm; tool execution is blocked while both are loaded", "error");
     } catch (e) {
@@ -158,8 +170,11 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
   pi.on("session_shutdown", async () => { sessionApprovals.clear(); readCalls.clear(); await sandbox.close(); });
   pi.on("before_agent_start", (event) => {
     const sections = event.systemPromptOptions.sections ??= {};
-    if (!error && !conflict && policy) applyPromptSections(sections, current());
-    else {
+    if (!error && !conflict && policy) {
+      try { applyPromptSections(sections, current()); return; }
+      catch (e) { error = String(e); }
+    }
+    {
       for (const name of Object.keys(sections)) if (name === "pi_perm" || name.startsWith("pi_perm_")) delete sections[name];
       sections.pi_perm_runtime = `pi-perm failed closed: ${error ?? "Conflicting permission extensions"}. Do not execute tools; ask the user to fix the configuration.`;
     }
@@ -167,7 +182,8 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
   pi.on("tool_call", async (event, ctx) => {
     if (conflict) return { block: true, reason: "Two permission extensions are loaded; disable the old one and reload" };
     if (error) return { block: true, reason: `pi-perm failed closed: ${error}` };
-    const c = current();
+    let c: PolicyContext;
+    try { c = current(); } catch (e) { return { block: true, reason: String(e) }; }
     if (isYolo(c)) return;
     const input = event.input as Record<string, unknown>;
     const raw = typeof input.path === "string" ? input.path : undefined;
@@ -175,7 +191,7 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
       ? await bashDecision(String(input.command ?? ""), c)
       : toolDecision(c, event.toolName, raw, JSON.stringify(input));
     if (decision.action === "deny") return { block: true, reason: decision.reason };
-    if (decision.action === "ask" && !(await confirm(ctx, `Allow ${event.toolName}?`, JSON.stringify(input, null, 2)))) {
+    if (decision.action === "ask" && !(await confirm(ctx, `Allow ${event.toolName}?`, `${decision.reason ?? ""}\n${JSON.stringify(decision.trace ?? [])}\n${JSON.stringify(input, null, 2)}`))) {
       return { block: true, reason: "Permission refused (or no UI / request too large to review). Do not retry or rephrase it." };
     }
     if (READ_TOOLS.has(event.toolName) || WRITE_TOOLS.has(event.toolName)) {

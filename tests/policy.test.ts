@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { readDecision, toolDecision, writeDecision } from "../src/policy.ts";
+import { parseSettings } from "../src/config.ts";
 import { canonicalPath } from "../src/paths.ts";
 import type { Mode, PolicyContext } from "../src/types.ts";
 
@@ -87,11 +88,23 @@ test("only project and session scratch are automatic, not other temporary locati
     assert.equal(readDecision(c, path.join(c.scratch, "..", "other-session", "work.txt")).action, "allow");
   } finally { cleanup(); }
 });
+test("permission-map literal aliases cannot erase canonical denies and filesystem refusals retain provenance", () => {
+  const { c, cleanup } = fixture();
+  try {
+    mkdirSync(path.join(c.root, "private-data"));
+    symlinkSync(path.join(c.root, "private-data"), path.join(c.root, "public-alias"));
+    c.settings = parseSettings({ configVersion: 2, permissionGroups: { paths: { "tool-parser": { read: { "*": "allow", "private-data/*": "deny", "public-alias/*": "allow" } } } }, modes: { plan: { permissionGroups: ["development", "planning", "paths"] } } });
+    const decision = readDecision(c, "public-alias/file.txt");
+    assert.equal(decision.action, "deny");
+    assert.ok(decision.trace?.some(t => t.group === "paths" && t.pattern === "private-data/*" && t.source === "global config"));
+    assert.ok(writeDecision(c, "file.ts").trace?.some(t => t.group === "planning" && t.surface === "filesystem.writeExtensions"));
+  } finally { cleanup(); }
+});
 test("tool defaults and explicit YOLO bypass", () => {
   const { c, cleanup } = fixture();
   try {
     assert.equal(toolDecision(c, "web_enable").action, "allow");
-    for (const name of ["web_search", "powershell", "codemode", "unknown"]) assert.equal(toolDecision(c, name).action, "ask");
+    for (const name of ["web_search", "powershell", "codemode", "unknown"]) assert.equal(toolDecision(c, name).action, "allow");
     c.mode = "yolo";
     assert.equal(readDecision(c, "notes/a").action, "allow");
     assert.equal(writeDecision(c, "/etc/a").action, "allow");

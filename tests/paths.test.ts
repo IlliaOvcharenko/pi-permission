@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { canonicalPath, expandPath, globRegex, protectedWrite, restrictedInProject, within } from "../src/paths.ts";
+import { canonicalPath, commandWords, expandPath, globRegex, within } from "../src/paths.ts";
 
 test("normalize aliases and URLs", () => {
   assert.equal(expandPath("@~/a", "/home/me"), "/home/me/a");
@@ -11,13 +11,12 @@ test("normalize aliases and URLs", () => {
   assert.equal(expandPath("file:///a/b%20c"), "/a/b c");
   assert.throws(() => expandPath("bad\0path"));
 });
-test("boundaries and restricted directory segments", () => {
+test("path boundaries and command pattern argument boundaries", () => {
   assert.equal(within("/project", "/project-other/a"), false);
   assert.equal(within("/project", "/project/..foo"), true);
-  assert.equal(restrictedInProject("/p", "/p/a/NOTES/file"), true);
-  assert.equal(restrictedInProject("/p", "/p/notes.txt"), false);
-  assert.equal(restrictedInProject("/p", "/elsewhere/notes"), false);
-  for (const p of ["/p/.env", "/p/a/node_modules/a", "/p/.zshrc"]) assert.equal(protectedWrite(p), true);
+  assert.deepEqual(commandWords('npm test "two words" *'), ["npm", "test", "two words", "*"]);
+  assert.throws(() => commandWords("npm test; rm"));
+  assert.throws(() => commandWords("npm 'oops"));
 });
 test("dangling symlink targets cannot masquerade as project paths", () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "pi-perm-paths-"));

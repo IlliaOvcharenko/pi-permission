@@ -1,224 +1,184 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { absolutePath } from "./paths.ts";
-import { MODES, isMode, type ModeSettings, type PermissionGroup, type Permission, type PolicyContext, type ProjectSettings, type PromptSection, type Rule, type SandboxSettings, type Settings } from "./types.ts";
+import { absolutePath, commandWords } from "./paths.ts";
+import { MODES, isMode, type Action, type PermissionGroup, type PolicyContext, type PromptSection, type Rule, type Settings } from "./types.ts";
 
 const STOCK = JSON.parse(readFileSync(new URL("../defaults.json", import.meta.url), "utf8"));
 const ACTIONS = ["allow", "ask", "deny"];
-const RESERVED = new Set(["status", "trust", "revoke", "clear-approvals", "config", "constructor", "prototype", "__proto__"]);
-function rejectNull(value: unknown): void {
-  if (value === null) throw new Error("Configuration values cannot be null; omit a field to inherit it");
-  if (typeof value === "object") for (const child of Object.values(value as object)) rejectNull(child);
-}
-function object(value: unknown, label: string): Record<string, any> {
+export function object(value: unknown, label: string): Record<string, any> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   return value as Record<string, any>;
 }
+function rejectNull(value: unknown): void {
+  if (value === null) throw new Error("Configuration values cannot be null; omit a field to inherit");
+  if (typeof value === "object") for (const child of Object.values(value)) rejectNull(child);
+}
 function keys(value: Record<string, unknown>, allowed: string[], label: string): void {
-  for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Unknown ${label} key: ${key}`);
+  for (const key of Object.keys(value)) if (!allowed.includes(key)) throw new Error(`Unknown ${label} key: ${key}. See docs/configs.md for configuration version 2 migration.`);
 }
 function strings(value: unknown, label: string): string[] {
-  if (!Array.isArray(value) || value.some(p => typeof p !== "string" || !p.trim() || /[\0\r\n]/.test(p))) throw new Error(`${label} must be an array of nonempty strings`);
+  if (!Array.isArray(value) || value.some(p => typeof p !== "string" || !p.trim() || /[\x00-\x1f\x7f]/.test(p))) throw new Error(`${label} must be an array of nonempty strings`);
   return [...new Set(value)];
 }
-function paths(value: unknown, label: string): string[] {
-  const result = strings(value, label);
-  if (result.some(p => /[*?[\]]/.test(p))) throw new Error(`${label} must use literal paths, not globs`);
-  return result;
+function action(value: unknown): asserts value is Action {
+  if (!ACTIONS.includes(value as string)) throw new Error("Expected allow, ask, or deny");
 }
-function modeName(name: string): void {
-  if (!isMode(name)) throw new Error(`Unknown mode: ${name}; use plan, approve, build, or yolo`);
-}
-export function parseRead(value: unknown): ProjectSettings["read"] {
-  const read = value === undefined ? {} : object(value, "read");
-  keys(read, ["allow", "deny"], "read");
-  return { allow: paths(read.allow ?? [], "read.allow"), deny: paths(read.deny ?? [], "read.deny") };
-}
-function permission(value: unknown, project = false): Permission {
-  const raw = object(value, "permission");
-  const result: Permission = Object.create(null);
-  for (const [surface, rule] of Object.entries(raw)) {
-    if (!/^[a-zA-Z_][a-zA-Z0-9_.:-]*$/.test(surface) || RESERVED.has(surface) || surface === "groups") throw new Error(`Invalid permission surface: ${surface}`);
-    if (typeof rule === "string" && ACTIONS.includes(rule)) { result[surface] = rule as Rule; continue; }
-    const map = object(rule, `permission.${surface}`);
-    for (const [pattern, action] of Object.entries(map)) {
-      if (!pattern || pattern.length > 4096 || /^\d+$/.test(pattern)) throw new Error("Permission patterns must be nonempty nonnumeric strings of at most 4096 characters");
-      if (typeof action === "string" && ACTIONS.includes(action)) continue;
-      const entry = object(action, "rule"); keys(entry, ["action", "reason"], "rule");
-      if (!ACTIONS.includes(entry.action) || (entry.reason !== undefined && (project || typeof entry.reason !== "string" || entry.reason.length > 500))) throw new Error("Invalid permission action/reason (project reasons are not allowed)");
-    }
-    result[surface] = map as Rule;
+export function parseRule(value: unknown): Rule {
+  if (typeof value === "string") { action(value); return value; }
+  const map = object(value, "permission rule");
+  for (const [pattern, value] of Object.entries(map)) {
+    if (!pattern.trim() || pattern.length > 4096 || /^\d+$/.test(pattern) || /[\x00-\x1f\x7f]/.test(pattern)) throw new Error("Invalid permission pattern (nonempty, nonnumeric, at most 4096 characters)");
+    action(value);
   }
-  return result;
+  return { ...map };
 }
-/** Groups contain ordinary tool rules and optionally one AST-checked Bash rule. */
-function group(value: unknown): PermissionGroup {
-  const raw = { ...object(value, "permission group") };
-  if (Object.hasOwn(raw, "groups")) throw new Error("Permission groups cannot include other groups");
-  let safeBash: PermissionGroup["safeBash"];
-  if (typeof raw.bash === "object" && raw.bash && Object.hasOwn(raw.bash, "safeCommands")) {
-    keys(raw.bash, ["safeCommands", "action"], "safe Bash rule");
-    const commands = strings(raw.bash.safeCommands, "safeCommands");
-    if (commands.some(s => !/^[a-zA-Z0-9_-]+$/.test(s)) || !ACTIONS.includes(raw.bash.action)) throw new Error("safeCommands requires bare command names and an allow/ask/deny action");
-    safeBash = { safeCommands: commands, action: raw.bash.action };
-    delete raw.bash;
-  }
-  return { permission: permission(raw), ...(safeBash ? { safeBash } : {}) };
-}
-function selectedPermission(value: unknown): { rules: Permission; groups?: string[] } {
-  const raw = { ...object(value, "permission") };
-  const groups = raw.groups === undefined ? undefined : strings(raw.groups, "permission.groups");
-  delete raw.groups;
-  return { rules: permission(raw), groups };
-}
-function sandbox(value: unknown, base: SandboxSettings, project = false): SandboxSettings {
-  const raw = object(value, "sandbox");
-  keys(raw, project ? ["writable", "allowWrite", "denyRead", "denyWrite"] : ["enabled", "writable", "allowWrite", "denyRead", "denyWrite", "linux"], "sandbox");
-  const out = { ...base, ...raw, linux: { ...base.linux } } as SandboxSettings;
-  for (const key of ["enabled", "writable"] as const) if (typeof out[key] !== "boolean") throw new Error(`sandbox.${key} must be boolean`);
-  for (const key of ["allowWrite", "denyRead", "denyWrite"] as const) out[key] = paths(out[key], `sandbox.${key}`);
-  if (raw.linux !== undefined) {
-    const options = object(raw.linux, "linux"); keys(options, ["allowNestedUserNamespaces"], "linux");
-    if (options.allowNestedUserNamespaces !== undefined && typeof options.allowNestedUserNamespaces !== "boolean") throw new Error("linux.allowNestedUserNamespaces must be boolean");
-    Object.assign(out.linux, options);
-  }
-  return out;
-}
-export function parseSettings(value: unknown): Settings {
-  rejectNull(value);
-  const raw = object(value, "config");
-  keys(raw, ["$schema", "$comment", "defaultMode", "cycleOrder", "read", "shared", "modes", "prompts", "permissionGroups"], "config");
-  const shared = raw.shared === undefined ? {} : object(raw.shared, "shared");
-  keys(shared, ["sandbox", "permission"], "shared");
-  const sharedSandbox = sandbox(shared.sandbox ?? {}, STOCK.shared.sandbox);
-  const stockPermission = selectedPermission(STOCK.shared.permission);
-  const sharedPermission = selectedPermission(shared.permission ?? {});
-  const permissionGroups: Settings["permissionGroups"] = Object.create(null);
-  const definitions = { ...STOCK.permissionGroups, ...object(raw.permissionGroups ?? {}, "permissionGroups") };
-  for (const [name, value] of Object.entries(definitions)) {
-    if (!/^[a-z][a-z0-9_-]*$/.test(name) || RESERVED.has(name)) throw new Error(`Invalid permission group name: ${name}`);
-    permissionGroups[name] = group(value);
-  }
-  const changes = raw.modes === undefined ? {} : object(raw.modes, "modes");
-  for (const name of Object.keys(changes)) modeName(name);
-  const modes: Settings["modes"] = Object.create(null);
-  for (const name of MODES) {
-    const patch = object(changes[name] ?? {}, `mode ${name}`);
-    const stock = STOCK.modes[name];
-    const def = { ...stock, ...patch };
-    keys(def, ["color", "systemPrompt", "systemPromptAppend", "sandbox", "permission"], `mode ${name}`);
-    const sb = sandbox({ ...object(stock.sandbox ?? {}, "stock sandbox"), ...object(patch.sandbox ?? {}, "mode sandbox") }, sharedSandbox);
-    const stockMode = selectedPermission(stock.permission ?? {});
-    const local = selectedPermission(patch.permission ?? {});
-    const groups = local.groups ?? sharedPermission.groups ?? stockMode.groups ?? stockPermission.groups ?? [];
-    const grouped: Permission = Object.create(null);
-    let safeBash: PermissionGroup["safeBash"];
-    let bashDefinition: string | undefined;
-    for (const groupName of groups) {
-      if (!Object.hasOwn(permissionGroups, groupName)) throw new Error(`Unknown permission group: ${groupName}`);
-      const entry = permissionGroups[groupName];
-      for (const [surface, rule] of Object.entries(entry.permission)) {
-        if (Object.hasOwn(grouped, surface) && JSON.stringify(grouped[surface]) !== JSON.stringify(rule)) throw new Error(`Conflicting permission groups for ${surface}`);
-        grouped[surface] = rule;
+function filesystem(value: unknown, bash = false): void {
+  const fs = object(value, "filesystem");
+  keys(fs, bash ? ["writeRoots", "denyRead", "denyWrite"] : ["readRoots", "externalRead", "writeRoots", "writeExtensions", "denyRead", "denyWrite", "denyDirectoryNames", "protectedWrite"], "filesystem");
+  for (const [key, value] of Object.entries(fs)) {
+    if (key === "externalRead") { action(value); continue; }
+    const entries = strings(value, key);
+    if (["readRoots", "writeRoots", "denyRead", "denyWrite"].includes(key)) {
+      for (const p of entries) {
+        if (/[*?[\]]/.test(p)) throw new Error(`${key} requires literal paths`);
+        if (/\$(?!\{(?:home|agentDir|project|scratch)\})/.test(p)) throw new Error(`Unknown path variable in ${p}`);
       }
-      const bash = entry.safeBash ?? entry.permission.bash;
-      if (bash !== undefined) {
-        const signature = JSON.stringify(bash);
-        if (bashDefinition !== undefined && bashDefinition !== signature) throw new Error("Conflicting permission groups for bash");
-        bashDefinition = signature;
-      }
-      if (entry.safeBash) safeBash = entry.safeBash;
     }
-    modes[name] = {
-      color: def.color ?? "muted",
-      systemPrompt: def.systemPrompt ?? "", systemPromptAppend: def.systemPromptAppend ?? "",
-      sandbox: sb, groups, safeBash,
-      permission: { ...stockPermission.rules, ...grouped, ...sharedPermission.rules, ...stockMode.rules, ...local.rules },
+    if (key === "denyDirectoryNames" && entries.some(p => /[/\\*?]/.test(p) || p === "." || p === "..")) throw new Error("denyDirectoryNames requires literal directory names");
+    if (key === "writeExtensions" && entries.some(p => !/^\.[a-zA-Z0-9]+$/.test(p))) throw new Error("writeExtensions requires extensions such as .md");
+  }
+}
+function group(value: unknown, source: string, base: string): PermissionGroup {
+  const g = object(value, "permission group");
+  keys(g, ["tool-parser", "bash-sandbox", "filesystem", "skills"], "permission group");
+  if (g["tool-parser"] !== undefined) {
+    const parser = object(g["tool-parser"], "tool-parser");
+    for (const [tool, rule] of Object.entries(parser)) {
+      if (tool !== "*" && (!/^[a-zA-Z_][a-zA-Z0-9_.:-]*$/.test(tool) || ["__proto__", "constructor", "prototype"].includes(tool))) throw new Error(`Invalid tool name: ${tool}`);
+      parseRule(rule);
+      if (tool === "bash" && typeof rule === "object") for (const pattern of Object.keys(rule!)) if (pattern !== "*") commandWords(pattern);
+      if (!["bash", "read", "write", "edit", "grep", "find", "ls"].includes(tool) && typeof rule !== "string") throw new Error(`No argument matching adapter for ${tool}; use a scalar action`);
+    }
+  }
+  if (g.skills !== undefined) parseRule(g.skills);
+  if (g.filesystem !== undefined) filesystem(g.filesystem);
+  if (g["bash-sandbox"] !== undefined) {
+    const sb = object(g["bash-sandbox"], "bash-sandbox");
+    keys(sb, ["enabled", "filesystem", "linux"], "bash-sandbox");
+    if (sb.enabled !== undefined && typeof sb.enabled !== "boolean") throw new Error("bash-sandbox.enabled must be boolean");
+    if (sb.filesystem !== undefined) filesystem(sb.filesystem, true);
+    if (sb.linux !== undefined) {
+      const linux = object(sb.linux, "linux"); keys(linux, ["allowNestedUserNamespaces"], "linux");
+      if (linux.allowNestedUserNamespaces !== undefined && typeof linux.allowNestedUserNamespaces !== "boolean") throw new Error("allowNestedUserNamespaces must be boolean");
+    }
+  }
+  return { ...structuredClone(g), source, base };
+}
+export interface ConfigLayer { value: unknown; source: string; base: string; loadText?: boolean }
+/** Same partial schema at both scopes. References are checked only after layering. */
+export function resolveSettings(layers: ConfigLayer[]): Settings {
+  const result = { configVersion: 2, replacements: [], promptSources: Object.create(null), modes: Object.create(null), permissionGroups: Object.create(null), prompts: { removeLegacySections: [], sections: Object.create(null) } } as unknown as Settings;
+  const allLayers: ConfigLayer[] = [{ value: STOCK, source: "shipped defaults", base: process.cwd(), loadText: false }, ...layers];
+  const sectionTextLayers = new Map<string, ConfigLayer>();
+  for (const layer of allLayers) {
+    rejectNull(layer.value);
+    const raw = object(layer.value, "config");
+    keys(raw, ["$schema", "$comment", "configVersion", "defaultMode", "cycleOrder", "permissionGroups", "modes", "prompts"], "config");
+    for (const key of ["$schema", "$comment"]) if (raw[key] !== undefined && typeof raw[key] !== "string") throw new Error(`${key} must be a string`);
+    if (Object.keys(raw).length && raw.configVersion !== 2) throw new Error("Set configVersion: 2 and migrate old permission, safeCommands, shared, and read settings; see docs/configs.md");
+    const text = (value: unknown): string => {
+      if (typeof value !== "string") throw new Error("Prompt text must be a string");
+      return value;
     };
-    const m = modes[name];
-    if (!["muted", "mdLink", "accent", "error"].includes(m.color)) throw new Error("Invalid mode color");
-    if (typeof m.systemPrompt !== "string" || typeof m.systemPromptAppend !== "string") throw new Error("systemPrompt and systemPromptAppend must be strings (inline or @file)");
-    if (name !== "yolo" && !sb.enabled) throw new Error("Only yolo may disable the sandbox");
-    if (name === "yolo" && sb.enabled) throw new Error("yolo must set sandbox.enabled=false");
-    if (name === "plan" && sb.writable) throw new Error("plan must set sandbox.writable=false");
+    if (raw.defaultMode !== undefined) {
+      if (!isMode(raw.defaultMode) || raw.defaultMode === "yolo") throw new Error("defaultMode must be plan, approve, or build");
+      result.defaultMode = raw.defaultMode;
+    }
+    if (raw.cycleOrder !== undefined) {
+      const cycle = strings(raw.cycleOrder, "cycleOrder");
+      if (!cycle.length || cycle.some(n => !isMode(n) || n === "yolo")) throw new Error("cycleOrder requires non-YOLO modes");
+      result.cycleOrder = cycle as Settings["cycleOrder"];
+    }
+    for (const [name, value] of Object.entries(object(raw.permissionGroups ?? {}, "permissionGroups"))) {
+      if (!/^[a-z][a-z0-9_-]*$/.test(name) || ["constructor", "prototype"].includes(name)) throw new Error(`Invalid group name: ${name}`);
+      if (Object.hasOwn(result.permissionGroups, name)) result.replacements.push({ group: name, previousSource: result.permissionGroups[name].source, source: layer.source });
+      result.permissionGroups[name] = group(value, layer.source, layer.base);
+    }
+    for (const [name, value] of Object.entries(object(raw.modes ?? {}, "modes"))) {
+      if (!isMode(name)) throw new Error(`Unknown mode: ${name}`);
+      const patch = object(value, name); keys(patch, ["permissionGroups", "color", "systemPrompt", "systemPromptAppend"], name);
+      const mode = result.modes[name] ?? { color: "muted", systemPrompt: "", systemPromptAppend: "", permissionGroups: [], sources: {} };
+      if (patch.permissionGroups !== undefined) {
+        mode.permissionGroups = strings(patch.permissionGroups, "mode.permissionGroups");
+        if (!mode.permissionGroups.length) throw new Error("Mode permissionGroups cannot be empty");
+      }
+      if (patch.color !== undefined) {
+        if (!["muted", "mdLink", "accent", "error"].includes(patch.color) && !(typeof patch.color === "string" && /^#[0-9a-fA-F]{6}$/.test(patch.color))) throw new Error("Invalid mode color; use a theme token or #RRGGBB");
+        mode.color = patch.color;
+      }
+      for (const key of ["systemPrompt", "systemPromptAppend"] as const) if (patch[key] !== undefined) {
+        mode[key] = text(patch[key]);
+        result.promptSources[`modes.${name}.${key}`] = { source: layer.source, ...(mode[key].startsWith("@") ? { file: absolutePath(layer.base, mode[key].slice(1), os.homedir()) } : {}) };
+      }
+      for (const key of Object.keys(patch)) mode.sources[key] = layer.source;
+      result.modes[name] = mode;
+    }
+    const prompts = object(raw.prompts ?? {}, "prompts"); keys(prompts, ["removeLegacySections", "sections"], "prompts");
+    if (prompts.removeLegacySections !== undefined) {
+      result.prompts.removeLegacySections = strings(prompts.removeLegacySections, "removeLegacySections");
+      if (result.prompts.removeLegacySections.some(n => !["permission_mode", "permission_mode_docs", "permission_mode_steering"].includes(n))) throw new Error("Only known legacy sections can be removed");
+    }
+    for (const [name, value] of Object.entries(object(prompts.sections ?? {}, "prompt sections"))) {
+      if (!/^pi_perm_[a-z][a-z0-9_]*$/.test(name)) throw new Error("Prompt sections require pi_perm_ namespace");
+      const patch = object(value, name); keys(patch, ["source", "when", "text"], name);
+      const section = { ...result.prompts.sections[name], ...patch } as PromptSection;
+      if (patch.source !== undefined && patch.source !== result.prompts.sections[name]?.source && patch.text === undefined) delete section.text;
+      if (patch.text !== undefined) { section.text = text(patch.text); sectionTextLayers.set(name, layer); }
+      if (!["text", "mode", "runtime"].includes(section.source)) throw new Error("Invalid prompt source");
+      if (Array.isArray(section.when) ? section.when.some(n => !isMode(n)) : !["sandboxed", "always", "never"].includes(section.when)) throw new Error("Invalid prompt timing");
+      if (section.source === "text" ? typeof section.text !== "string" : section.text !== undefined) throw new Error("Only text-source sections accept text");
+      if (name === "pi_perm_runtime" ? section.source !== "runtime" || section.when !== "sandboxed" : section.source === "runtime") throw new Error("pi_perm_runtime cannot be overridden or disabled");
+      for (const field of Object.keys(patch)) result.promptSources[`sections.${name}.${field}`] = { source: layer.source, ...(field === "text" && typeof patch.text === "string" && patch.text.startsWith("@") ? { file: absolutePath(layer.base, patch.text.slice(1), os.homedir()) } : {}) };
+      if (section.text === undefined) delete result.promptSources[`sections.${name}.text`];
+      result.prompts.sections[name] = section;
+    }
   }
-  const defaultMode = raw.defaultMode ?? STOCK.defaultMode;
-  if (!isMode(defaultMode) || defaultMode === "yolo") throw new Error("defaultMode must be plan, approve, or build");
-  const cycleOrder = strings(raw.cycleOrder ?? STOCK.cycleOrder, "cycleOrder");
-  if (!cycleOrder.length || cycleOrder.some(n => !isMode(n) || n === "yolo")) throw new Error("cycleOrder must use plan, approve, or build; YOLO requires explicit selection");
-  const prompts = raw.prompts === undefined ? {} : object(raw.prompts, "prompts");
-  keys(prompts, ["$comment", "removeLegacySections", "sections"], "prompts");
-  const removeLegacySections = strings(prompts.removeLegacySections ?? STOCK.prompts.removeLegacySections, "removeLegacySections");
-  if (removeLegacySections.some(n => !["permission_mode", "permission_mode_docs", "permission_mode_steering"].includes(n))) throw new Error("Only known legacy permission sections may be removed");
-  const patches = prompts.sections === undefined ? {} : object(prompts.sections, "prompt sections");
-  const sections: Record<string, PromptSection> = Object.create(null);
-  for (const [name, patch] of Object.entries({ ...STOCK.prompts.sections, ...patches })) {
-    if (!/^pi_perm_[a-z][a-z0-9_]*$/.test(name)) throw new Error("Prompt sections must use the pi_perm_ namespace");
-    const fields = object(patch, name);
-    const section = { ...STOCK.prompts.sections[name], ...fields } as PromptSection;
-    if (fields.source !== undefined && fields.source !== STOCK.prompts.sections[name]?.source && fields.text === undefined) delete section.text;
-    keys(section as unknown as Record<string, unknown>, ["source", "when", "text"], name);
-    if (!["text", "mode", "runtime"].includes(section.source)) throw new Error(`Invalid prompt source: ${name}`);
-    if (Array.isArray(section.when)) { if (section.when.some(n => !Object.hasOwn(modes, n))) throw new Error("Prompt when references an unknown mode"); }
-    else if (!["sandboxed", "always", "never"].includes(section.when)) throw new Error(`Invalid prompt when: ${name}`);
-    if (section.source === "text" ? typeof section.text !== "string" : section.text !== undefined) throw new Error("Only text-source sections accept text");
-    if (name === "pi_perm_runtime" ? section.source !== "runtime" || section.when !== "sandboxed" : section.source === "runtime") throw new Error("pi_perm_runtime is generated automatically and cannot be overridden or disabled");
-    sections[name] = section;
+  for (const name of MODES) {
+    const groups = result.modes[name].permissionGroups.map(n => {
+      if (!Object.hasOwn(result.permissionGroups, n)) throw new Error(`Unknown permission group: ${n}`);
+      return result.permissionGroups[n];
+    });
+    if (name !== "yolo" && !groups.some(g => g["bash-sandbox"]?.enabled === true)) throw new Error(`${name} must require the Bash sandbox`);
   }
-  return { defaultMode, cycleOrder: cycleOrder as Settings["cycleOrder"], read: parseRead(raw.read), modes, permissionGroups, prompts: { removeLegacySections, sections } };
+  const loadText = (text: string, layer?: ConfigLayer) => layer?.loadText && text.startsWith("@") ? readFileSync(absolutePath(layer.base, text.slice(1), os.homedir()), "utf8") : text;
+  for (const mode of Object.values(result.modes)) for (const key of ["systemPrompt", "systemPromptAppend"] as const) mode[key] = loadText(mode[key], allLayers.findLast(l => l.source === mode.sources[key]));
+  for (const [name, section] of Object.entries(result.prompts.sections)) if (section.text !== undefined) section.text = loadText(section.text, sectionTextLayers.get(name));
+  return result;
 }
-export const DEFAULT_SETTINGS: Settings = parseSettings({});
-export function modeSettings(ctx: PolicyContext): ModeSettings {
-  const mode = (ctx.settings ?? DEFAULT_SETTINGS).modes[ctx.mode];
-  if (!mode) throw new Error(`Unknown mode: ${ctx.mode}`);
-  const overlay = ctx.project?.modes?.[ctx.mode];
-  if (!overlay?.sandbox) return mode;
-  const p = overlay.sandbox;
-  const sb = { ...mode.sandbox, ...p, denyRead: [...mode.sandbox.denyRead, ...(p.denyRead ?? [])], denyWrite: [...mode.sandbox.denyWrite, ...(p.denyWrite ?? [])] };
-  return { ...mode, sandbox: sb };
+export function parseSettings(value: unknown, project?: unknown): Settings {
+  return resolveSettings([{ value, source: "global config", base: process.cwd() }, ...(project === undefined ? [] : [{ value: project, source: "project config", base: process.cwd() }])]);
+}
+export const DEFAULT_SETTINGS = parseSettings({});
+export function modeSettings(ctx: PolicyContext) { return (ctx.settings ?? DEFAULT_SETTINGS).modes[ctx.mode]; }
+export function selectedGroups(ctx: PolicyContext): [string, PermissionGroup][] {
+  const settings = ctx.settings ?? DEFAULT_SETTINGS;
+  return modeSettings(ctx).permissionGroups.map(name => [name, settings.permissionGroups[name]]);
 }
 export function isYolo(ctx: PolicyContext): boolean { return ctx.mode === "yolo"; }
-export function parseProject(value: unknown): ProjectSettings {
-  rejectNull(value);
-  const raw = object(value, "project config"); keys(raw, ["$schema", "$comment", "read", "modes"], "project config");
-  const result: ProjectSettings = { read: parseRead(raw.read) };
-  if (raw.modes !== undefined) {
-    result.modes = Object.create(null);
-    for (const [name, value] of Object.entries(object(raw.modes, "project modes"))) {
-      modeName(name);
-      const m = object(value, name); keys(m, ["permission", "sandbox"], `project mode ${name}`);
-      const parsed: any = {};
-      if (m.permission !== undefined) parsed.permission = permission(m.permission, true);
-      if (m.sandbox !== undefined) {
-        const s = object(m.sandbox, "project sandbox");
-        sandbox(s, DEFAULT_SETTINGS.modes.build.sandbox, true);
-        if (s.writable === true) throw new Error("Projects cannot enable writes");
-        parsed.sandbox = s;
-      }
-      result.modes![name] = parsed;
-    }
-  }
-  return result;
-}
-export function validateProject(project: ProjectSettings, settings: Settings, root: string, home: string): void {
-  for (const [name, m] of Object.entries(project.modes ?? {})) {
-    if (!isMode(name) || !Object.hasOwn(settings.modes, name)) throw new Error(`Project references unknown mode: ${name}`);
-    const allowed = settings.modes[name].sandbox.allowWrite.map(p => absolutePath(root, p, home));
-    if (m.sandbox?.allowWrite?.some(p => !allowed.includes(absolutePath(root, p, home)))) throw new Error("Project allowWrite may only remove global entries");
-  }
-}
 export function loadJson(file: string): unknown {
   try { return JSON.parse(readFileSync(file, "utf8")); } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
     throw new Error(`Cannot load ${file}: ${String(error)}`);
   }
 }
-export function loadSettings(file: string): Settings {
-  const settings = parseSettings(loadJson(file));
-  const text = (s: string) => s.startsWith("@") ? readFileSync(absolutePath(path.dirname(file), s.slice(1), os.homedir()), "utf8") : s;
-  for (const m of Object.values(settings.modes)) { m.systemPrompt = text(m.systemPrompt); m.systemPromptAppend = text(m.systemPromptAppend); }
-  for (const s of Object.values(settings.prompts.sections)) if (s.source === "text") s.text = text(s.text!);
-  return settings;
+export function loadSettings(file: string, projectFile?: string): Settings {
+  return resolveSettings([file, ...(projectFile ? [projectFile] : [])].map(source => ({ value: loadJson(source), source, base: path.dirname(source), loadText: true })));
 }
-export function loadProject(file: string): ProjectSettings { return parseProject(loadJson(file)); }
+export function resolvePath(ctx: PolicyContext, group: PermissionGroup, raw: string): string {
+  const vars: Record<string, string> = { home: ctx.home, agentDir: ctx.agentDir, project: ctx.root, scratch: ctx.scratch };
+  return absolutePath(group.base, raw.replace(/\$\{([^}]+)\}/g, (_, name) => {
+    if (!Object.hasOwn(vars, name)) throw new Error(`Unknown path variable: ${name}`);
+    return vars[name];
+  }), ctx.home);
+}

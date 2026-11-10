@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createExtension } from "../src/index.ts";
+import { createExtension, modeLabel } from "../src/index.ts";
 import { canonicalPath } from "../src/paths.ts";
 import { MODE_ENTRY } from "../src/sessions.ts";
 import { Sandbox } from "../src/sandbox.ts";
@@ -52,9 +52,10 @@ function harness() {
   };
   const box = new Sandbox(async () => { throw new Error("sandbox deliberately unavailable"); });
   createExtension(pi, sdk, { home, agentDir: agent, scratch: () => scratch, sandbox: box });
+  ctx.reload = () => events.get("session_start")!({ reason: "reload" }, ctx);
   return {
     root, agent, home, scratch, tools, prompts, ctx, events, commands, shortcuts, notices,
-    configure: (value: unknown) => { mkdirSync(path.join(agent, "pi-perm"), { recursive: true }); writeFileSync(path.join(agent, "pi-perm", "config.json"), JSON.stringify(value)); },
+    configure: (value: unknown) => { mkdirSync(path.join(agent, "pi-perm"), { recursive: true }); writeFileSync(path.join(agent, "pi-perm", "config.json"), JSON.stringify({ configVersion: 2, ...(value as object) })); },
     start: (reason = "new") => events.get("session_start")!({ reason }, ctx),
     call: (name: string, input: any, id = "call") => events.get("tool_call")!({ toolName: name, input, toolCallId: id }, ctx),
     setAllow: (value: boolean) => { allow = value; },
@@ -74,10 +75,12 @@ test("Plan blocks code edits, permits Markdown and normal reads without asking",
     assert.equal(h.prompts.length, 0);
   } finally { await h.cleanup(); }
 });
-test("custom tools ask and denials are respected; web_enable is free", async () => {
+test("custom tools default allow; explicit ask respects denial", async () => {
   const h = harness();
   try {
+    h.configure({ permissionGroups: { consent: { "tool-parser": { unknown: "ask" } } }, modes: { plan: { permissionGroups: ["development", "planning", "consent"] } } });
     await h.start(); h.setAllow(false);
+    assert.equal(await h.call("other_unknown", {}), undefined);
     assert.equal((await h.call("unknown", { action: "run" })).block, true);
     assert.equal(await h.call("web_enable", {}), undefined);
     assert.equal(h.prompts.length, 1);
@@ -136,21 +139,21 @@ test("invalid configuration blocks rather than discarding restrictions", async (
     assert.equal((await h.call("read", { path: "main.ts" })).block, true);
   } finally { await h.cleanup(); }
 });
-test("project grant expansions need UI trust, persist, and revoke", async () => {
+test("project policy requires content-bound trust, persists, and revokes", async () => {
   const h = harness();
   try {
     mkdirSync(path.join(h.root, ".pi"));
-    const ref = path.join(h.home, "reference"); mkdirSync(ref);
-    writeFileSync(path.join(h.root, ".pi", "pi-perm.json"), JSON.stringify({ read: { allow: [ref], deny: ["src/private"] } }));
+    writeFileSync(path.join(h.root, ".pi", "pi-perm.json"), JSON.stringify({ configVersion: 2, modes: { build: { color: "#112233" } } }));
     h.setAllow(false); await h.start();
-    assert.ok(h.prompts.includes("Trust project read grants?"));
+    assert.ok(h.prompts.includes("Trust project permission policy?"));
+    assert.equal((await h.call("read", { path: "main.ts" })).block, true);
     h.setAllow(true); await h.commands.get("perm").handler("trust", h.ctx);
-    const count = h.prompts.filter(p => p === "Trust project read grants?").length;
+    const count = h.prompts.filter(p => p === "Trust project permission policy?").length;
     await h.start("reload");
-    assert.equal(h.prompts.filter(p => p === "Trust project read grants?").length, count);
+    assert.equal(h.prompts.filter(p => p === "Trust project permission policy?").length, count);
     await h.commands.get("perm").handler("revoke", h.ctx);
     h.setAllow(false); await h.start("reload");
-    assert.equal(h.prompts.filter(p => p === "Trust project read grants?").length, count + 1);
+    assert.equal(h.prompts.filter(p => p === "Trust project permission policy?").length, count + 1);
   } finally { await h.cleanup(); }
 });
 test("fixed modes, cycle order, prompt sections, reload and config inspection", async () => {
@@ -189,7 +192,7 @@ test("fixed modes, cycle order, prompt sections, reload and config inspection", 
 test("configured ask file writes accept only the approved call; denies still win", async () => {
   const h = harness();
   try {
-    h.configure({ defaultMode: "build", modes: { build: { permission: { write: "ask" } } } });
+    h.configure({ defaultMode: "build", permissionGroups: { consent: { "tool-parser": { write: "ask" } } }, modes: { build: { permissionGroups: ["development", "consent"] } } });
     await h.start();
     const input = { path: "main.ts", content: "replacement" };
     assert.equal(await h.call("write", input, "approved"), undefined);
@@ -199,14 +202,14 @@ test("configured ask file writes accept only the approved call; denies still win
     await assert.rejects(tool.execute("approved", { ...input, path: "notes/private.md" }, undefined, undefined, h.ctx));
   } finally { await h.cleanup(); }
 });
-test("project permission allow cannot loosen a global deny", async () => {
+test("approved project group replaces global deny with allow", async () => {
   const h = harness();
   try {
-    h.configure({ shared: { permission: { read: "deny" } } });
+    h.configure({ permissionGroups: { development: { "tool-parser": { read: "deny" }, "bash-sandbox": { enabled: true } } } });
     mkdirSync(path.join(h.root, ".pi"));
-    writeFileSync(path.join(h.root, ".pi", "pi-perm.json"), JSON.stringify({ modes: { plan: { permission: { read: "allow" } } } }));
+    writeFileSync(path.join(h.root, ".pi", "pi-perm.json"), JSON.stringify({ configVersion: 2, permissionGroups: { development: { "tool-parser": { read: "allow" }, "bash-sandbox": { enabled: true } } } }));
     await h.start();
-    assert.equal((await h.call("read", { path: "main.ts" })).block, true);
+    assert.equal(await h.call("read", { path: "main.ts" }), undefined);
   } finally { await h.cleanup(); }
 });
 test("YOLO requires confirmation and clears sandbox-only sections", async () => {
@@ -223,4 +226,78 @@ test("YOLO requires confirmation and clears sandbox-only sections", async () => 
     h.configure({ invalid: true }); await h.start("reload");
     assert.equal((await h.call("read", { path: "main.ts" })).block, true);
   } finally { await h.cleanup(); }
+});
+test("project policy cannot silently expand itself; invalid reload never partially activates", async () => {
+  const h = harness();
+  try {
+    await h.start();
+    mkdirSync(path.join(h.root, ".pi"));
+    const file = path.join(h.root, ".pi", "pi-perm.json");
+    writeFileSync(file, JSON.stringify({ configVersion: 2, modes: { build: { color: "#123456" } } }));
+    assert.equal((await h.call("unknown", {})).block, true);
+    const event = { systemPromptOptions: { sections: { pi_perm_mode: "stale" } as Record<string, string> } };
+    h.events.get("before_agent_start")!(event, h.ctx);
+    assert.match(event.systemPromptOptions.sections.pi_perm_runtime, /failed closed/);
+    assert.equal(event.systemPromptOptions.sections.pi_perm_mode, undefined);
+    h.setAllow(false); await h.start("reload");
+    assert.equal((await h.call("unknown", {})).block, true);
+    h.setAllow(true); await h.start("reload");
+    assert.equal(await h.call("unknown", {}), undefined);
+    writeFileSync(file, JSON.stringify({ configVersion: 2, permissionGroups: { development: { "tool-parser": { "*": "allow" }, "bash-sandbox": { enabled: false } } } }));
+    await h.start("reload");
+    assert.equal((await h.call("unknown", {})).block, true);
+  } finally { await h.cleanup(); }
+});
+test("no UI or Pi project trust never activates project authority", async () => {
+  for (const kind of ["no-ui", "untrusted"]) {
+    const h = harness();
+    try {
+      mkdirSync(path.join(h.root, ".pi"));
+      writeFileSync(path.join(h.root, ".pi", "pi-perm.json"), JSON.stringify({ configVersion: 2 }));
+      if (kind === "no-ui") h.ctx.hasUI = false;
+      else h.ctx.isProjectTrusted = () => false;
+      await h.start();
+      assert.equal((await h.call("unknown", {})).block, true);
+    } finally { await h.cleanup(); }
+  }
+});
+test("read-root symlink retargeting and file/directory identity changes need new policy trust", async () => {
+  const h = harness();
+  try {
+    const a = path.join(h.home, "a"), b = path.join(h.home, "b"), link = path.join(h.home, "reference");
+    mkdirSync(a); mkdirSync(b); symlinkSync(a, link);
+    mkdirSync(path.join(h.root, ".pi"));
+    writeFileSync(path.join(h.root, ".pi", "pi-perm.json"), JSON.stringify({ configVersion: 2, permissionGroups: { refs: { filesystem: { readRoots: [link] } } } }));
+    await h.start();
+    const count = h.prompts.filter(p => p === "Trust project permission policy?").length;
+    rmSync(link); symlinkSync(b, link);
+    assert.equal((await h.call("unknown", {})).block, true);
+    await h.start("reload");
+    assert.equal(h.prompts.filter(p => p === "Trust project permission policy?").length, count + 1);
+    rmSync(b, { recursive: true }); writeFileSync(b, "file not directory");
+    assert.equal((await h.call("unknown", {})).block, true);
+    await h.start("reload");
+    assert.equal(h.prompts.filter(p => p === "Trust project permission policy?").length, count + 2);
+  } finally { await h.cleanup(); }
+});
+test("a project policy changed during its UI approval is never saved or activated", async () => {
+  const h = harness();
+  try {
+    mkdirSync(path.join(h.root, ".pi"));
+    const file = path.join(h.root, ".pi", "pi-perm.json");
+    writeFileSync(file, JSON.stringify({ configVersion: 2 }));
+    h.ctx.ui.confirm = async () => { writeFileSync(file, JSON.stringify({ configVersion: 2, defaultMode: "build" })); return true; };
+    await h.start();
+    assert.equal((await h.call("unknown", {})).block, true);
+    assert.ok(h.notices.some(n => n.includes("changed during trust review")));
+  } finally { await h.cleanup(); }
+});
+test("mode colors use theme tokens or concrete RGB and handle absent UI color support", () => {
+  let style: any;
+  const theme: any = { fg: (token: string, text: string) => `${token}:${text}`, style: (text: string, options: any) => { style = options; return text; } };
+  assert.equal(modeLabel(theme, "accent", "build"), "accent:build");
+  assert.equal(modeLabel(theme, "#12AbEf", "build"), "build");
+  assert.deepEqual(style.fg, { kind: "rgb", r: 18, g: 171, b: 239 });
+  assert.equal(modeLabel(undefined, "#123456", "build"), "build");
+  assert.equal(modeLabel(undefined, "muted", "plan"), "plan");
 });

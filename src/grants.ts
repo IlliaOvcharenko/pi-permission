@@ -4,7 +4,7 @@ import path from "node:path";
 import type { ReadGrant } from "./types.ts";
 import { absolutePath, canonicalPath } from "./paths.ts";
 
-interface Registry { version: 1; projects: Record<string, ReadGrant[]> }
+interface Registry { version: 1; projects: Record<string, ReadGrant[]>; policies?: Record<string, string> }
 export function describeGrant(raw: string, root: string, home?: string): ReadGrant {
   const target = canonicalPath(absolutePath(root, raw, home));
   const st = statSync(target);
@@ -32,7 +32,18 @@ function readRegistry(file: string): Registry {
   for (const grants of Object.values(r.projects)) {
     if (!Array.isArray(grants) || grants.some(g => !g || typeof g.path !== "string" || !path.isAbsolute(g.path) || !["file", "directory"].includes(g.kind))) throw new Error("Invalid pi-perm trust entries");
   }
+  if (r.policies !== undefined && (!r.policies || typeof r.policies !== "object" || Array.isArray(r.policies) || Object.values(r.policies).some(d => !/^[a-f0-9]{64}$/.test(d)))) throw new Error("Invalid project policy trust entries");
   return r;
+}
+export function approvedPolicy(file: string, project: string): string | undefined {
+  return readRegistry(file).policies?.[canonicalPath(project)];
+}
+export function savePolicy(file: string, project: string, digest?: string): void {
+  const registry = readRegistry(file);
+  registry.policies ??= {};
+  if (digest) registry.policies[canonicalPath(project)] = digest;
+  else delete registry.policies[canonicalPath(project)];
+  writeRegistry(file, registry);
 }
 export function readApproved(file: string, project: string): ReadGrant[] {
   return readRegistry(file).projects[canonicalPath(project)] ?? [];
@@ -40,6 +51,9 @@ export function readApproved(file: string, project: string): ReadGrant[] {
 export function saveApproved(file: string, project: string, grants: ReadGrant[]): void {
   const registry = readRegistry(file);
   registry.projects[canonicalPath(project)] = grants;
+  writeRegistry(file, registry);
+}
+function writeRegistry(file: string, registry: Registry): void {
   const dir = path.dirname(file);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   // This host-side store is separate from project settings and write-denied

@@ -1,57 +1,91 @@
 {
-  "$comment": "SHIPPED DEFAULTS, not the live user config. Overlay in <agentDir>/pi-perm/config.json; applied on startup or /reload. Read config.example.json and README.md. Arrays replace, permission surfaces replace, objects merge. FIXED IN CODE (not configurable): mandatory non-YOLO sandbox with no fallback; project/scratch write boundary; Plan Markdown-only file writes and scratch-only Bash writes; project archive/notes/.git/credentials read denies; ~/.ssh and Pi auth/oauth read denies; protected-path/trust-registry backstops; UI trust for project read expansions; YOLO confirmation and exclusion from defaults/cycles; open network, POSIX-only sandbox and runtime exceptions. Only configured prompt sections are injected; permissions are enforced directly, not parsed out of prompts.",
+  "$comment": "Shipped policy. See docs/configs.md.",
+  "configVersion": 2,
   "defaultMode": "plan",
   "cycleOrder": ["plan", "approve", "build"],
-  "read": { "allow": [], "deny": [] },
   "permissionGroups": {
-    "exploration": {
-      "read": "allow", "grep": "allow", "find": "allow", "ls": "allow",
-      "bash": { "safeCommands": ["ls", "grep", "fd", "fdfind", "rg", "find", "pwd"], "action": "allow" }
-    }
-  },
-  "shared": {
-    "sandbox": {
-      "enabled": true,
-      "writable": true,
-      "allowWrite": ["."],
-      "denyRead": [],
-      "denyWrite": [],
-      "linux": { "allowNestedUserNamespaces": false }
+    "development": {
+      "tool-parser": {
+        "*": "allow",
+        "bash": { "*": "ask", "ls": "allow", "grep": "allow", "fd": "allow", "fdfind": "allow", "rg": "allow", "find": "allow", "pwd": "allow" }
+      },
+      "skills": "allow",
+      "filesystem": {
+        "readRoots": [
+          "${project}",
+          "${scratch}",
+          "${agentDir}/skills",
+          "${agentDir}/prompts"
+        ],
+        "externalRead": "ask",
+        "writeRoots": [
+          "${project}",
+          "${scratch}"
+        ],
+        "denyRead": [
+          "${home}/.ssh",
+          "${home}/.pi/agent/auth.json",
+          "${home}/.pi/agent/oauth.json",
+          "${agentDir}/auth.json",
+          "${agentDir}/oauth.json"
+        ],
+        "denyDirectoryNames": ["archive", "notes", ".git", "credentials"],
+        "protectedWrite": [
+          "**/.git",
+          "**/.git/*",
+          "**/node_modules",
+          "**/node_modules/*",
+          "**/.env",
+          "**/.env.*",
+          "**/.gitconfig",
+          "**/.gitmodules",
+          "**/.npmrc",
+          "**/.bashrc",
+          "**/.bash_profile",
+          "**/.profile"
+        ]
+      },
+      "bash-sandbox": {
+        "enabled": true,
+        "filesystem": {
+          "writeRoots": [
+            "${project}",
+            "${scratch}"
+          ],
+          "denyRead": [],
+          "denyWrite": []
+        },
+        "linux": { "allowNestedUserNamespaces": false }
+      }
     },
-    "permission": {
-      "path": "allow",
-      "external_directory": "ask",
-      "write": "allow", "edit": "allow",
-      "bash": "ask",
-      "tool": { "*": "ask", "web_enable": "allow" },
-      "skill": "allow"
+    "planning": {
+      "filesystem": { "writeExtensions": [".md", ".markdown"] },
+      "bash-sandbox": { "filesystem": { "writeRoots": ["${scratch}"] } }
     }
   },
   "modes": {
     "plan": {
       "color": "muted",
-      "permission": { "groups": ["exploration"] },
-      "sandbox": { "writable": false },
+      "permissionGroups": ["development", "planning"],
       "systemPrompt": "Chat, explore, and plan. Change only Markdown files, and only when requested. Do not create a plan file unless asked. Bash cannot change project files."
     },
     "approve": {
       "color": "mdLink",
-      "permission": { "groups": ["exploration"] },
+      "permissionGroups": ["development"],
       "systemPrompt": "Before any file creation, edit, deletion, rename, or overwrite: list every affected filename and summarize the changes; ask a standalone approval question; wait for explicit confirmation. A task request, mode switch, or general plan approval is not confirmation. Approval covers only the listed scope; revised or additional changes need a new proposal and confirmation. After confirmation, use file tools without another approval question; Bash still follows tool prompts."
     },
     "build": {
       "color": "accent",
-      "permission": { "groups": ["exploration"] },
+      "permissionGroups": ["development"],
       "systemPrompt": "Implement the requested task without separate chat approval for file changes. Bash and other tool prompts still apply."
     },
     "yolo": {
       "color": "error",
-      "sandbox": { "enabled": false },
+      "permissionGroups": ["development"],
       "systemPrompt": ""
     }
   },
   "prompts": {
-    "$comment": "Keys below are exact Pi systemPromptOptions.sections names. source=text uses text (inline or @file); source=mode uses the selected mode's systemPrompt + systemPromptAppend. when=sandboxed means every non-YOLO mode. when can also be always, never, or an array of mode IDs. pi_perm_runtime is reserved: generated and refreshed before every agent turn; its source/when cannot change and text cannot be supplied. Other sections are editable. Sections no longer applicable are removed, not left in the session.",
     "removeLegacySections": ["permission_mode", "permission_mode_docs", "permission_mode_steering"],
     "sections": {
       "pi_perm_shared": {

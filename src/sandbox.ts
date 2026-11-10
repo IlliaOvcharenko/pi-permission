@@ -6,9 +6,9 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import type { PolicyContext, RuntimeProfile } from "./types.ts";
-import { absolutePath, canonicalPath, RESTRICTED_NAMES } from "./paths.ts";
-import { readDenies, writeRoots } from "./policy.ts";
-import { isYolo, modeSettings } from "./config.ts";
+import { canonicalPath, pathVariants } from "./paths.ts";
+import { filesystemPolicy } from "./policy.ts";
+import { isYolo, selectedGroups } from "./config.ts";
 
 export interface RuntimeManager {
   isSupportedPlatform(): boolean;
@@ -31,28 +31,41 @@ export const quote = (text: string): string => "'" + text.replace(/'/g, "'\\''")
 const casePattern = (text: string) => [...text].map(c => /[a-z]/i.test(c) ? `[${c.toLowerCase()}${c.toUpperCase()}]` : c).join("");
 const literal = (text: string) => ({ path: text, literal: true as const });
 const globLiteral = (text: string) => text.replace(/[?*\[]/g, c => `[${c}]`);
+/** Runtime ? cannot cross separators. Broaden it rather than weakening a deny.
+ * Permission stars cross separators; preserve optional directory globstars. */
+export function runtimeDenyPattern(pattern: string): string {
+  let out = "";
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern.slice(i, i + 3) === "**/" && (i === 0 || pattern[i - 1] === "/")) { out += "**/"; i += 2; }
+    else if (pattern[i] === "*" || pattern[i] === "?") { out += "**"; while (pattern[i + 1] === "*") i++; }
+    else out += casePattern(globLiteral(pattern[i]));
+  }
+  return out;
+}
 export function sandboxProfile(ctx: PolicyContext): RuntimeProfile {
   const root = canonicalPath(ctx.root);
-  const mode = modeSettings(ctx);
-  const hard = readDenies(ctx).flatMap(p => [p, canonicalPath(p)]);
-  const denyWrite = mode.sandbox.denyWrite.flatMap(p => {
-    const literal = absolutePath(ctx.root, p, ctx.home);
-    return [literal, canonicalPath(literal)];
-  });
-  const names = RESTRICTED_NAMES.flatMap(name => [
+  const fs = filesystemPolicy(ctx, true);
+  const groups = selectedGroups(ctx);
+  if (!isYolo(ctx) && !groups.some(([, g]) => g["bash-sandbox"]?.enabled === true)) throw new Error("Bash sandbox is required; refusing execution");
+  const hard = fs.denyRead.flatMap(p => [p, canonicalPath(p)]);
+  const names = fs.directoryNames.flatMap(name => [
     literal(path.join(root, name)),
     // Runtime 0.0.81 expands read-deny globs on Linux at each wrap and
     // compiles them into Seatbelt rules on macOS. No write-allow globs.
-    `${globLiteral(root)}/**/${casePattern(name)}`,
+    `${globLiteral(root)}/**/${casePattern(globLiteral(name))}`,
   ]);
   return {
     // Intentionally OMIT allowedDomains. [] would block all traffic instead.
     network: { deniedDomains: [] },
-    allowNestedUserNamespaces: mode.sandbox.linux.allowNestedUserNamespaces,
+    allowNestedUserNamespaces: groups.some(([, g]) => g["bash-sandbox"]?.linux?.allowNestedUserNamespaces === true) && !groups.some(([, g]) => g["bash-sandbox"]?.linux?.allowNestedUserNamespaces === false),
     filesystem: {
-      allowWrite: (mode.sandbox.writable ? writeRoots(ctx) : [ctx.scratch]).map(literal),
+      allowWrite: fs.writeRoots.map(literal),
       denyRead: [...[...new Set(hard)].map(literal), ...names],
-      denyWrite: [...new Set([...hard, ...denyWrite, path.dirname(ctx.trustFile), path.join(root, ".git")])].map(literal),
+      denyWrite: [
+        ...[...new Set([...hard, ...fs.denyWrite, ...pathVariants(ctx.root, path.dirname(ctx.trustFile))])].map(literal),
+        ...names,
+        ...fs.protectedWrite.flatMap(p => path.isAbsolute(p) ? [runtimeDenyPattern(p)] : [...new Set([root, ...fs.writeRoots])].map(r => `${globLiteral(r)}/${runtimeDenyPattern(p)}`)),
+      ],
     },
   };
 }

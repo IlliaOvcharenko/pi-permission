@@ -1,44 +1,39 @@
 export const MODES = ["plan", "approve", "build", "yolo"] as const;
 export type Mode = (typeof MODES)[number];
 export type Action = "allow" | "ask" | "deny";
-export interface Decision { action: Action; reason?: string }
-export type Rule = Action | Record<string, Action | { action: Action; reason?: string }>;
+export interface Trace { group: string; source: string; surface: string; pattern: string; action: Action }
+export interface Decision { action: Action; reason?: string; trace?: Trace[] }
+export type Rule = Action | Record<string, Action>;
 export type Permission = Record<string, Rule>;
-export interface SafeCommandRule { safeCommands: string[]; action: Action }
-/** Parsed group rules. Safe Bash rules remain distinct from whole-line globs. */
-export interface PermissionGroup { permission: Permission; safeBash?: SafeCommandRule }
-export interface ReadGrant { path: string; kind: "file" | "directory" }
-export interface ReadSettings { allow: string[]; deny: string[] }
-export interface SandboxSettings {
-  enabled: boolean; writable: boolean; allowWrite: string[]; denyRead: string[]; denyWrite: string[];
-  linux: { allowNestedUserNamespaces: boolean };
+export interface FilesystemSettings {
+  readRoots?: string[]; externalRead?: Action; writeRoots?: string[]; writeExtensions?: string[];
+  denyRead?: string[]; denyWrite?: string[]; denyDirectoryNames?: string[]; protectedWrite?: string[];
 }
+export interface PermissionGroup {
+  "tool-parser"?: Permission; "bash-sandbox"?: { enabled?: boolean; filesystem?: Pick<FilesystemSettings, "writeRoots" | "denyRead" | "denyWrite">; linux?: { allowNestedUserNamespaces?: boolean } };
+  filesystem?: FilesystemSettings; skills?: Rule;
+  source: string; base: string;
+}
+export interface ReadGrant { path: string; kind: "file" | "directory" }
 export interface ModeSettings {
-  color: "muted" | "mdLink" | "accent" | "error";
-  systemPrompt: string; systemPromptAppend: string;
-  sandbox: SandboxSettings; permission: Permission;
-  groups: string[]; safeBash?: SafeCommandRule;
+  color: "muted" | "mdLink" | "accent" | "error" | `#${string}`;
+  systemPrompt: string; systemPromptAppend: string; permissionGroups: string[];
+  sources: Record<string, string>;
 }
 export interface PromptSection {
   when: "sandboxed" | "always" | "never" | string[];
-  source: "text" | "mode" | "runtime";
-  text?: string;
+  source: "text" | "mode" | "runtime"; text?: string;
 }
 export interface Settings {
-  defaultMode: Mode; cycleOrder: Mode[]; read: ReadSettings;
-  modes: Record<Mode, ModeSettings>;
-  permissionGroups: Record<string, PermissionGroup>;
+  configVersion: 2; defaultMode: Mode; cycleOrder: Mode[];
+  replacements: { group: string; previousSource: string; source: string }[];
+  promptSources: Record<string, { source: string; file?: string }>;
+  modes: Record<Mode, ModeSettings>; permissionGroups: Record<string, PermissionGroup>;
   prompts: { removeLegacySections: string[]; sections: Record<string, PromptSection> };
 }
-export interface ProjectMode {
-  permission?: Permission;
-  sandbox?: Partial<Pick<SandboxSettings, "writable" | "allowWrite" | "denyRead" | "denyWrite">>;
-}
-export interface ProjectSettings { read: ReadSettings; modes?: Record<string, ProjectMode> }
 export interface PolicyContext {
   root: string; scratch: string; home: string; agentDir: string; mode: Mode;
-  readRoots: ReadGrant[]; denyRead: string[]; trustFile: string;
-  settings?: Settings; project?: ProjectSettings;
+  readRoots: ReadGrant[]; denyRead: string[]; trustFile: string; settings?: Settings;
 }
 export type RuntimePath = string | { path: string; literal: true };
 export interface RuntimeProfile {

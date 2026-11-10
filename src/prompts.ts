@@ -1,6 +1,6 @@
 import type { Permission, PolicyContext } from "./types.ts";
-import { DEFAULT_SETTINGS, isYolo, modeSettings } from "./config.ts";
-import { readDenies, writeRoots } from "./policy.ts";
+import { DEFAULT_SETTINGS, isYolo, modeSettings, resolvePath, selectedGroups } from "./config.ts";
+import { filesystemPolicy } from "./policy.ts";
 
 // Use code spans for literal paths/patterns, including unusual Markdown names.
 function literal(text: string): string {
@@ -15,13 +15,11 @@ function permissionList(title: string, permission: Permission | undefined): stri
   return list(title, Object.entries(permission ?? {}).flatMap(([surface, rule]) => {
     if (typeof rule === "string") return [`${literal(surface)}: **${rule}**`];
     const entries = Object.entries(rule);
-    if (!entries.length) return [`${literal(surface)}: no matching rules (falls back to ask)`];
+    if (!entries.length) return [`${literal(surface)}: no additional restriction`];
     return [[
       `${literal(surface)} (last matching pattern wins):`,
       ...entries.map(([pattern, value]) => {
-        const action = typeof value === "string" ? value : value.action;
-        const reason = typeof value === "string" ? "" : value.reason;
-        return `  - ${literal(pattern)}: **${action}**${reason ? ` — ${literal(reason)}` : ""}`;
+        return `  - ${literal(pattern)}: **${value}**`;
       }),
     ].join("\n")];
   }));
@@ -30,46 +28,32 @@ function permissionList(title: string, permission: Permission | undefined): stri
 /** Facts are generated from the same resolved profile consumed by enforcement.
  * This reserved section is not a user-supplied policy or editable text template. */
 function runtimeText(ctx: PolicyContext): string {
-  const mode = modeSettings(ctx);
-  const roots = mode.sandbox.writable ? writeRoots(ctx) : [ctx.scratch];
-  const projectPermission = ctx.project?.modes?.[ctx.mode]?.permission;
-  const safeBash = mode.safeBash;
+  const fs = filesystemPolicy(ctx);
+  const bash = filesystemPolicy(ctx, true);
+  const groups = selectedGroups(ctx);
   return [
     `## pi-perm runtime — ${literal(ctx.mode)}`,
     "Bash must use its OS sandbox. Failure means refusal, never an unsandboxed fallback.",
-    list("Bash writable locations", [
-      ...roots.map(root => `${literal(root)}${root === ctx.scratch ? " — private session scratch; use TMPDIR" : ""}`),
-      ...(!mode.sandbox.writable ? ["Project writes are disabled for Bash."] : []),
-      "Runtime-mandatory temporary exceptions also apply.",
-    ]),
-    list("File tools", [
-      `Writes: configured project roots and scratch${ctx.mode === "plan" ? "; only requested Markdown changes" : mode.sandbox.writable ? "" : "; project writes disabled"}.`,
-      "Protected-path and trust-registry safeguards remain enforced.",
-      "Approve chat confirmation and re-reading are behavioral, not mechanically checked.",
-    ]),
-    list("File-tool read locations (subject to tool rules and hard denies)", [
-      `${literal(ctx.root)} — current project`,
-      `${literal(ctx.scratch)} — session scratch`,
-      ...ctx.readRoots.map(root => `${literal(root.path)} — ${root.kind}`),
-    ]),
-    list("Hard read denies (grants never override these)", [
-      ...[...new Set(readDenies(ctx))].map(literal),
-      "Project directories named archive, notes, .git, or credentials, at every depth.",
-    ]),
-    list("Additional write denies", mode.sandbox.denyWrite.map(literal)),
-    [mode.permission, projectPermission].some(permission => Object.values(permission ?? {}).some(rule => typeof rule !== "string"))
-      ? "Permission patterns: `*` matches any text (including `/`); a bare `*` means all targets. `?` matches one character; `**/` matches zero or more directories. Within each map, the last matching rule wins; no match falls back to ask for base rules and adds no restriction for project overlays. Across applicable gates, deny > ask > allow; hard safeguards still win. Bash patterns match the entire submitted command line, not each nested executable."
-      : "",
-    permissionList("Tool permissions", mode.permission),
-    permissionList("Project tightening (composes with tool permissions; stricter action wins)", projectPermission),
-    safeBash?.safeCommands.length ? list("Bash safe-command permission", [
-      `${safeBash.safeCommands.map(literal).join(", ")}: **${safeBash.action}** when tree-sitter confirms safe structure.`,
-      "Matching command-line patterns override this rule; scalar ask is the fallback. Scalar allow/deny takes priority. Project restrictions and path gates still apply.",
-    ]) : "",
-    list("Platform options", [
-      `Linux nested user namespaces: ${mode.sandbox.linux.allowNestedUserNamespaces ? "enabled" : "disabled"}.`,
-    ]),
-    "Approved scripts do not ask for every file they open. Bash reads broadly except sandbox denies. Custom extension tools are NOT OS-sandboxed. Never bypass denials.",
+    list("Active groups (independent restrictions)", groups.map(([n, g]) => `${literal(n)} — ${literal(g.source)}`)),
+    "Last matching pattern wins within a map. Across selected groups: deny > ask > allow. Unspecified tools allow. Named tools replace only their group's wildcard fallback. Local same-name groups replace inherited groups entirely.",
+    "Permission patterns: `*` crosses `/`; `?` is one character; `**/` also matches zero directories. Bash rules match parsed executable/argument sequences, NOT whole submitted source. Narrow allows require supported syntax and every command to pass; unsupported structures ask unless explicitly broadly allowed or denied.",
+    list("Bash writable locations", [...bash.writeRoots.map(literal), "No implicit scratch grant; use TMPDIR only when permitted. Runtime-mandatory temporary exceptions also apply."]),
+    list("File-tool writable locations", fs.writeRoots.map(literal)),
+    list("File-tool write extensions", fs.extensions?.map(literal) ?? []),
+    list("Configured read denies (read roots never override these)", fs.denyRead.map(literal)),
+    list("Configured project directory-name denies", fs.directoryNames.map(literal)),
+    list("Configured protected-write patterns", fs.protectedWrite.map(literal)),
+    list("File-tool write denies", fs.denyWrite.map(literal)),
+    list("Additional Bash read denies", bash.denyRead.filter(p => !fs.denyRead.includes(p)).map(literal)),
+    list("Bash write denies", bash.denyWrite.map(literal)),
+    ...groups.map(([name, g]) => [
+      permissionList(`Tool parser: ${name}`, g["tool-parser"]),
+      permissionList(`Skills: ${name}`, g.skills === undefined ? undefined : { skills: g.skills }),
+      list(`File-tool read roots: ${name}`, (g.filesystem?.readRoots ?? []).map(p => literal(resolvePath(ctx, g, p)))),
+      g.filesystem?.externalRead ? `External reads in ${literal(name)}: **${g.filesystem.externalRead}**.` : "",
+    ].filter(Boolean).join("\n\n")),
+    "Trust-registry and private command-transport protections are structural. Approve chat confirmation, requested-only Plan edits, and re-reading are behavioral, not mechanically checked.",
+    "Approved scripts do not ask for every file they open. Bash reads broadly except sandbox denies. Network is unrestricted. Custom extension tools are NOT OS-sandboxed. Never bypass denials.",
   ].filter(Boolean).join("\n\n");
 }
 export function promptSections(ctx: PolicyContext): Record<string, string> {

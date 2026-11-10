@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const RESTRICTED_NAMES = ["archive", "notes", ".git", "credentials"] as const;
 export function expandPath(raw: string, home = os.homedir()): string {
   let p = raw.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, " ");
   if (p.startsWith("@")) p = p.slice(1);
@@ -49,23 +48,22 @@ export function pathVariants(root: string, raw: string, home?: string): string[]
   const literal = absolutePath(root, raw, home);
   return [...new Set([literal, canonicalPath(literal)])];
 }
-export function restrictedInProject(root: string, target: string): boolean {
-  if (!within(root, target)) return false;
-  return path.relative(root, target).split(path.sep).some(p => (RESTRICTED_NAMES as readonly string[]).includes(p.toLowerCase()));
+/** Configuration command patterns preserve argument boundaries. A final bare
+ * star matches additional arguments; quoted text remains one argument. */
+export function commandWords(pattern: string): string[] {
+  const words: string[] = [];
+  let word = "", quote = "", started = false;
+  for (const c of pattern) {
+    if (quote) { if (c === quote) quote = ""; else word += c; started = true; }
+    else if (c === "'" || c === '"') { quote = c; started = true; }
+    else if (/\s/.test(c)) { if (started) { words.push(word); word = ""; started = false; } }
+    else { if (/[;$`\\|&<>(){}]/.test(c)) throw new Error("Bash rules describe literal commands, not shell source"); word += c; started = true; }
+  }
+  if (quote) throw new Error("Unclosed quote in Bash permission pattern");
+  if (started) words.push(word);
+  if (!words.length || !/^[a-zA-Z0-9_./-]+$/.test(words[0])) throw new Error("Bash patterns require a literal executable");
+  return words;
 }
-const PROTECTED_FILES = new Set([
-  ".gitconfig", ".gitmodules", ".npmrc", ".bashrc", ".bash_profile", ".zshrc",
-  ".zprofile", ".profile", ".ripgreprc", ".envrc", ".mcp.json",
-]);
-export function protectedWrite(target: string): boolean {
-  const parts = target.toLowerCase().split(path.sep);
-  return parts.some((part, i) =>
-    [".git", "node_modules", ".vscode", ".idea"].includes(part) ||
-    part === ".env" || part.startsWith(".env.") || PROTECTED_FILES.has(part) ||
-    (part === ".claude" && ["commands", "agents"].includes(parts[i + 1])),
-  );
-}
-export function markdown(target: string): boolean { return /\.(md|markdown)$/i.test(target); }
 export function globRegex(glob: string): RegExp {
   let out = "^";
   for (let i = 0; i < glob.length; i++) {
