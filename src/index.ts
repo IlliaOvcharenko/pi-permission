@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
@@ -38,6 +38,7 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
   let policy: PolicyContext | undefined;
   let error: string | undefined = "pi-permission has not initialized";
   let projectFile = "";
+  let loadedConfigs = { global: false, local: false };
   let activeSignature = "";
   const projectText = (): string => {
     try { return readFileSync(projectFile, "utf8"); }
@@ -111,7 +112,15 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
         return;
       }
       if (command !== "status") { ctx.ui.notify("Unknown pi-permission command", "warning"); return; }
-      ctx.ui.notify(JSON.stringify({ mode, modes: Object.keys(settings.modes), cycleOrder: settings.cycleOrder, configFile, error, conflict, sandbox: sandbox.status, scratch: policy?.scratch, groups: settings.modes[mode].permissionGroups.map(name => ({ name, source: settings.permissionGroups[name].source })), filesystem: c ? filesystemPolicy(c) : undefined, trustFile }, null, 2), "info");
+      const blocked = !!error || conflict;
+      const configState = (loaded: boolean) => !c ? "not active" : loaded ? "loaded" : "absent; using defaults";
+      ctx.ui.notify([
+        `pi-permission: ${mode} (${blocked ? "blocked" : mode === "yolo" ? "UNSANDBOXED" : "sandbox required"})`,
+        `Global: ${configFile} (${configState(loadedConfigs.global)})`,
+        `Local: ${projectFile || "not initialized"} (${configState(loadedConfigs.local)})`,
+        ...(error ? [`Error: ${error}`] : []),
+        ...(conflict ? ["Conflict: disable pi-permission-modes"] : []),
+      ].join("\n"), blocked ? "warning" : "info");
     },
   });
   pi.registerShortcut("alt+m", {
@@ -129,6 +138,7 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
       projectFile = path.join(ctx.cwd, sdk.CONFIG_DIR_NAME, "pi-permission.json");
       const sourceText = projectText();
       if (sourceText && !ctx.isProjectTrusted()) throw new Error("Pi project trust is required before loading project policy");
+      const configPresence = { global: existsSync(configFile), local: existsSync(projectFile) };
       const candidate = loadSettings(configFile, projectFile);
       if (projectText() !== sourceText) throw new Error("Project policy changed while loading; reload to review the new content");
       mode = startMode({ reason: event.reason, entries: ctx.sessionManager.getBranch(), defaultMode: candidate.defaultMode, flag: pi.getFlag("pi-permission"), inherited, modes: candidate.modes });
@@ -152,6 +162,7 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
       for (const name of MODES) if (name !== "yolo") sandboxProfile({ ...next, mode: name });
       if (signature(next) !== nextSignature) throw new Error("Project policy changed during initialization");
       settings = candidate;
+      loadedConfigs = configPresence;
       activeSignature = nextSignature;
       policy = next;
       error = undefined;

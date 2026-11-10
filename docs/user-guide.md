@@ -17,7 +17,10 @@
 
 - `/pi-permission plan`, `/pi-permission approve`, `/pi-permission build`; Alt+M cycles non-YOLO modes.
 - `/pi-permission yolo` requires explicit UI confirmation for unrestricted unsandboxed use.
-- `/pi-permission status` shows mode, selected groups/sources, filesystem, scratch and cycle.
+- `/pi-permission status` (or just `/pi-permission`) shows a short mode/safety summary,
+  global and local config paths with loaded/absent state, and any blocking errors.
+  Absent files leave the inherited defaults in place; failed initialization marks configs
+  not active. File presence reflects the last successful load, not live disk changes.
   `/pi-permission config` shows resolved groups/modes, separate file-tool/Bash profiles and
   generated next-turn prompt sections.
 - `/pi-permission trust` reloads and reviews project policy. `/pi-permission revoke` revokes its

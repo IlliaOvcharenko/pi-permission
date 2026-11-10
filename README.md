@@ -143,7 +143,7 @@ explicit section-field merge rules.
 ```text
 /pi-permission plan | approve | build
 /pi-permission yolo             Explicit warning and confirmation
-/pi-permission status           Mode, groups/sources, filesystem, scratch, cycle, errors
+/pi-permission status           Mode/safety, global/local config paths and load state, errors
 /pi-permission config           Resolved policy, active mode, filesystem, Bash profile, prompts
 /pi-permission trust            Reload and review pending project policy
 /pi-permission revoke           Revoke persistent project-policy trust and block until review

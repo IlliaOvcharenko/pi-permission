@@ -83,15 +83,41 @@ test("pi-permission owns command, flag, config paths, trust protection and mode 
     assert.equal(config.configFile, path.join(h.agent, "pi-permission", "config.json"));
     assert.equal(config.projectFile, path.join(h.root, ".pi", "pi-permission.json"));
     await h.commands.get("pi-permission").handler("status", h.ctx);
-    const status = JSON.parse(h.notices.at(-1)!);
-    assert.equal(status.mode, "build");
-    assert.equal(status.trustFile, path.join(h.agent, "pi-permission", "trust", "projects.json"));
-    assert.equal((await h.call("write", { path: status.trustFile })).block, true);
+    assert.equal(h.notices.at(-1), [
+      "pi-permission: build (sandbox required)",
+      `Global: ${config.configFile} (loaded)`,
+      `Local: ${config.projectFile} (absent; using defaults)`,
+    ].join("\n"));
+    assert.equal((await h.call("write", { path: path.join(h.agent, "pi-permission", "trust", "projects.json") })).block, true);
   } finally {
     await h.cleanup();
     if (previous === undefined) delete process.env.PI_PERMISSION_MODE;
     else process.env.PI_PERMISSION_MODE = previous;
   }
+});
+test("status reports defaults, loaded local policy, and blocked reloads concisely", async () => {
+  const h = harness();
+  const global = path.join(h.agent, "pi-permission", "config.json");
+  const local = path.join(h.root, ".pi", "pi-permission.json");
+  const status = async () => {
+    await h.commands.get("pi-permission").handler("", h.ctx);
+    return h.notices.at(-1)!;
+  };
+  try {
+    await h.start();
+    assert.equal(await status(), `pi-permission: plan (sandbox required)\nGlobal: ${global} (absent; using defaults)\nLocal: ${local} (absent; using defaults)`);
+    mkdirSync(path.dirname(local), { recursive: true });
+    writeFileSync(local, JSON.stringify({ configVersion: 2 }));
+    await h.start("reload");
+    assert.ok((await status()).includes(`Local: ${local} (loaded)`));
+    h.configure({ defaultMode: "yolo" });
+    await h.start("reload");
+    const blocked = await status();
+    assert.ok(blocked.includes("(blocked)"));
+    assert.ok(blocked.includes(`Global: ${global} (not active)`));
+    assert.ok(blocked.includes(`Local: ${local} (not active)`));
+    assert.ok(blocked.includes("Error:"));
+  } finally { await h.cleanup(); }
 });
 test("Plan blocks code edits, permits Markdown and normal reads without asking", async () => {
   const h = harness();
