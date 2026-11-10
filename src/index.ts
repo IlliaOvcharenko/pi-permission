@@ -29,14 +29,14 @@ export function modeLabel(theme: ExtensionContext["ui"]["theme"] | undefined, co
 export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Dependencies = {}): void {
   const home = dependencies.home ?? os.homedir();
   const agentDir = dependencies.agentDir ?? sdk.getAgentDir();
-  const stateDir = path.join(agentDir, "pi-perm");
+  const stateDir = path.join(agentDir, "pi-permission");
   const trustFile = path.join(stateDir, "trust", "projects.json");
   const configFile = path.join(stateDir, "config.json");
   let settings = DEFAULT_SETTINGS;
   const sandbox = dependencies.sandbox ?? new Sandbox();
   let mode: Mode = "plan";
   let policy: PolicyContext | undefined;
-  let error: string | undefined = "pi-perm has not initialized";
+  let error: string | undefined = "pi-permission has not initialized";
   let projectFile = "";
   let activeSignature = "";
   const projectText = (): string => {
@@ -54,15 +54,15 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
   let conflict = false;
   const sessionApprovals = new Set<string>();
   const readCalls = new Map<string, { mode: Mode; grants: ReadGrant[]; input: string; name: string; approved: boolean }>();
-  const inherited = process.env.PI_PERM_MODE;
+  const inherited = process.env.PI_PERMISSION_MODE;
 
   const status = (ctx: ExtensionContext) => {
     const definition = settings.modes[mode];
     const name = modeLabel(ctx.ui.theme, definition?.color ?? "muted", mode);
-    if (ctx.hasUI) ctx.ui.setStatus("pi-perm", `pi-perm: ${name}${error || conflict ? " [blocked]" : mode === "yolo" ? " [UNSANDBOXED]" : " [sandbox required]"}`);
+    if (ctx.hasUI) ctx.ui.setStatus("pi-permission", `pi-permission: ${name}${error || conflict ? " [blocked]" : mode === "yolo" ? " [UNSANDBOXED]" : " [sandbox required]"}`);
   };
   const current = (): PolicyContext => {
-    if (!policy || error) throw new Error(error ?? "pi-perm not initialized");
+    if (!policy || error) throw new Error(error ?? "pi-permission not initialized");
     if (signature(policy) !== activeSignature) {
       error = "Project policy or read-root identity changed; /reload and review trust again";
       sessionApprovals.clear(); readCalls.clear();
@@ -83,13 +83,13 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
     if (next === "yolo" && (!ctx.hasUI || !(await ctx.ui.confirm("Enter YOLO?", "No sandbox or permission prompts. Use only in an already isolated disposable container.")))) return;
     mode = next;
     pi.appendEntry(MODE_ENTRY, { mode });
-    process.env.PI_PERM_MODE = mode;
+    process.env.PI_PERMISSION_MODE = mode;
     sessionApprovals.clear(); readCalls.clear(); status(ctx);
   };
 
-  pi.registerFlag("perm", { description: "pi-perm startup mode", type: "string" });
-  pi.registerCommand("perm", {
-    description: "pi-perm: plan | approve | build | yolo | status | config | trust | revoke | clear-approvals",
+  pi.registerFlag("pi-permission", { description: "pi-permission startup mode", type: "string" });
+  pi.registerCommand("pi-permission", {
+    description: "pi-permission: plan | approve | build | yolo | status | config | trust | revoke | clear-approvals",
     handler: async (args, ctx) => {
       const command = args.trim() || "status";
       if (isMode(command, Object.keys(settings.modes))) { await changeMode(command, ctx); return; }
@@ -110,12 +110,12 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
         }
         return;
       }
-      if (command !== "status") { ctx.ui.notify("Unknown pi-perm command", "warning"); return; }
+      if (command !== "status") { ctx.ui.notify("Unknown pi-permission command", "warning"); return; }
       ctx.ui.notify(JSON.stringify({ mode, modes: Object.keys(settings.modes), cycleOrder: settings.cycleOrder, configFile, error, conflict, sandbox: sandbox.status, scratch: policy?.scratch, groups: settings.modes[mode].permissionGroups.map(name => ({ name, source: settings.permissionGroups[name].source })), filesystem: c ? filesystemPolicy(c) : undefined, trustFile }, null, 2), "info");
     },
   });
   pi.registerShortcut("alt+m", {
-    description: "Cycle pi-perm modes in configured cycleOrder",
+    description: "Cycle pi-permission modes in configured cycleOrder",
     handler: async ctx => {
       const cycle = settings.cycleOrder;
       await changeMode(cycle[(cycle.indexOf(mode) + 1) % cycle.length], ctx);
@@ -123,19 +123,19 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
   });
   pi.on("session_start", async (event, ctx) => {
     sessionApprovals.clear(); readCalls.clear(); policy = undefined;
-    error = "pi-perm is loading configuration";
+    error = "pi-permission is loading configuration";
     try {
       conflict = pi.getCommands().some(c => c.sourceInfo?.path?.includes("pi-permission-modes"));
-      projectFile = path.join(ctx.cwd, sdk.CONFIG_DIR_NAME, "pi-perm.json");
+      projectFile = path.join(ctx.cwd, sdk.CONFIG_DIR_NAME, "pi-permission.json");
       const sourceText = projectText();
       if (sourceText && !ctx.isProjectTrusted()) throw new Error("Pi project trust is required before loading project policy");
       const candidate = loadSettings(configFile, projectFile);
       if (projectText() !== sourceText) throw new Error("Project policy changed while loading; reload to review the new content");
-      mode = startMode({ reason: event.reason, entries: ctx.sessionManager.getBranch(), defaultMode: candidate.defaultMode, flag: pi.getFlag("perm"), inherited, modes: candidate.modes });
+      mode = startMode({ reason: event.reason, entries: ctx.sessionManager.getBranch(), defaultMode: candidate.defaultMode, flag: pi.getFlag("pi-permission"), inherited, modes: candidate.modes });
       // Persist startup as well as explicit mode changes, so new sessions and
       // reloads never borrow the previously open session's environment mode.
       if (savedMode(ctx.sessionManager.getBranch(), Object.keys(settings.modes)) !== mode) pi.appendEntry(MODE_ENTRY, { mode });
-      process.env.PI_PERM_MODE = mode;
+      process.env.PI_PERMISSION_MODE = mode;
       const scratch = (dependencies.scratch ?? makeScratch)(ctx.sessionManager.getSessionId());
       const next: PolicyContext = {
         root: canonicalPath(ctx.cwd), scratch: canonicalPath(scratch), home, agentDir, mode,
@@ -145,7 +145,7 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
       const digest = createHash("sha256").update(JSON.stringify([nextSignature, candidate])).digest("hex");
       if (sourceText && approvedPolicy(trustFile, ctx.cwd) !== digest) {
         const details = `${canonicalPath(ctx.cwd)}\n${projectFile}\nSHA-256: ${digest}\nThis configuration can RELAX global permissions, replace groups, and change prompts. Review referenced prompt files too.\n${sourceText}`;
-        if (!ctx.hasUI || details.length > 16000 || !(await ctx.ui.confirm("Trust project permission policy?", details))) throw new Error("Project policy not approved; /perm trust or /reload to review again");
+        if (!ctx.hasUI || details.length > 16000 || !(await ctx.ui.confirm("Trust project permission policy?", details))) throw new Error("Project policy not approved; /pi-permission trust or /reload to review again");
         if (signature(next) !== nextSignature || JSON.stringify(loadSettings(configFile, projectFile)) !== JSON.stringify(candidate)) throw new Error("Project policy or referenced prompt changed during trust review");
         savePolicy(trustFile, ctx.cwd, digest);
       }
@@ -155,16 +155,16 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
       activeSignature = nextSignature;
       policy = next;
       error = undefined;
-      if (conflict && ctx.hasUI) ctx.ui.notify("Disable pi-permission-modes before using pi-perm; tool execution is blocked while both are loaded", "error");
+      if (conflict && ctx.hasUI) ctx.ui.notify("Disable pi-permission-modes before using pi-permission; tool execution is blocked while both are loaded", "error");
     } catch (e) {
       error = String(e);
-      if (ctx.hasUI) ctx.ui.notify(`pi-perm failed closed: ${error}`, "error");
+      if (ctx.hasUI) ctx.ui.notify(`pi-permission failed closed: ${error}`, "error");
     }
     status(ctx);
   });
   pi.on("session_tree", async (_event, ctx) => {
     mode = savedMode(ctx.sessionManager.getBranch(), Object.keys(settings.modes)) ?? settings.defaultMode;
-    process.env.PI_PERM_MODE = mode;
+    process.env.PI_PERMISSION_MODE = mode;
     sessionApprovals.clear(); readCalls.clear(); status(ctx);
   });
   pi.on("session_shutdown", async () => { sessionApprovals.clear(); readCalls.clear(); await sandbox.close(); });
@@ -175,13 +175,13 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
       catch (e) { error = String(e); }
     }
     {
-      for (const name of Object.keys(sections)) if (name === "pi_perm" || name.startsWith("pi_perm_")) delete sections[name];
-      sections.pi_perm_runtime = `pi-perm failed closed: ${error ?? "Conflicting permission extensions"}. Do not execute tools; ask the user to fix the configuration.`;
+      for (const name of Object.keys(sections)) if (name === "pi_permission" || name.startsWith("pi_permission_")) delete sections[name];
+      sections.pi_permission_runtime = `pi-permission failed closed: ${error ?? "Conflicting permission extensions"}. Do not execute tools; ask the user to fix the configuration.`;
     }
   });
   pi.on("tool_call", async (event, ctx) => {
     if (conflict) return { block: true, reason: "Two permission extensions are loaded; disable the old one and reload" };
-    if (error) return { block: true, reason: `pi-perm failed closed: ${error}` };
+    if (error) return { block: true, reason: `pi-permission failed closed: ${error}` };
     let c: PolicyContext;
     try { c = current(); } catch (e) { return { block: true, reason: String(e) }; }
     if (isYolo(c)) return;
@@ -297,7 +297,7 @@ function searchFiles(name: string, params: any, ctx: PolicyContext, once: ReadGr
   };
 }
 
-export default async function piPerm(pi: ExtensionAPI): Promise<void> {
+export default async function piPermission(pi: ExtensionAPI): Promise<void> {
   const sdk = await import("@earendil-works/pi-coding-agent");
   createExtension(pi, sdk);
 }

@@ -1,6 +1,6 @@
 # Third-party notices
 
-`pi-perm` adapts path normalization/canonicalization and the POSIX sandbox
+`pi-permission` adapts path normalization/canonicalization and the POSIX sandbox
 lifecycle/command-file transport approach from **pi-permission-modes 2.7.2**:
 
 - Author: Nico Merz

@@ -140,7 +140,7 @@ export function protectedPattern(ctx: PolicyContext, target: string, patterns: s
 export function writeDecision(ctx: PolicyContext, raw: string, surface = "write"): Decision {
   if (isYolo(ctx)) return { action: "allow" };
   const targets = pathVariants(ctx.root, raw, ctx.home);
-  if (targets.some(t => pathVariants(ctx.root, path.dirname(ctx.trustFile), ctx.home).some(p => within(p, t)))) return { action: "deny", reason: "Trust decisions can only be changed through the pi-perm UI" };
+  if (targets.some(t => pathVariants(ctx.root, path.dirname(ctx.trustFile), ctx.home).some(p => within(p, t)))) return { action: "deny", reason: "Trust decisions can only be changed through the pi-permission UI" };
   const denied = hardReadDecision(ctx, raw);
   if (denied) return denied;
   for (const [name, g] of selectedGroups(ctx)) {

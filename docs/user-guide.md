@@ -8,21 +8,22 @@
 2. Disable `pi-permission-modes`. Never run two permission extensions.
 3. Register the checkout: `pi install /absolute/path/to/pi-permission`. Local
    packages load in place; the checkout alone is not active.
-4. Migrate old configuration using [configs.md](configs.md#migration-from-version-1),
-   restart, inspect `/perm status`, and test disposable files. No live settings,
+4. Migrate old names using [configs.md](configs.md#rename-from-pi-perm) and, if needed,
+   the [version-1 migration](configs.md#migration-from-version-1).
+   Restart, inspect `/pi-permission status`, and test disposable files. No live settings,
    dependencies or environments are migrated/managed automatically.
 
 ## Daily use
 
-- `/perm plan`, `/perm approve`, `/perm build`; Alt+M cycles non-YOLO modes.
-- `/perm yolo` requires explicit UI confirmation for unrestricted unsandboxed use.
-- `/perm status` shows mode, selected groups/sources, filesystem, scratch and cycle.
-  `/perm config` shows resolved groups/modes, separate file-tool/Bash profiles and
+- `/pi-permission plan`, `/pi-permission approve`, `/pi-permission build`; Alt+M cycles non-YOLO modes.
+- `/pi-permission yolo` requires explicit UI confirmation for unrestricted unsandboxed use.
+- `/pi-permission status` shows mode, selected groups/sources, filesystem, scratch and cycle.
+  `/pi-permission config` shows resolved groups/modes, separate file-tool/Bash profiles and
   generated next-turn prompt sections.
-- `/perm trust` reloads and reviews project policy. `/perm revoke` revokes its
-  content-bound trust and blocks tools until review/removal. `/perm clear-approvals`
+- `/pi-permission trust` reloads and reviews project policy. `/pi-permission revoke` revokes its
+  content-bound trust and blocks tools until review/removal. `/pi-permission clear-approvals`
   forgets exact-request session approvals.
-- `pi --perm plan` sets startup mode. Reload/resume/tree restore saved branch
+- `pi --pi-permission plan` sets startup mode. Reload/resume/tree restore saved branch
   selections; new sessions use the configured non-YOLO default.
 
 Shipped Plan policy permits requested Markdown file edits and scratch-only Bash
@@ -60,7 +61,7 @@ or deny for tools you do not trust, regardless of their `path` arguments.
 
 ## Configure
 
-Global `<agentDir>/pi-perm/config.json` and project `.pi/pi-perm.json` use the same
+Global `<agentDir>/pi-permission/config.json` and project `.pi/pi-permission.json` use the same
 version-2 schema. Defaults → global → trusted project; groups replace atomically
 by name, modes merge explicit fields, and arrays replace. Local policy may relax
 global policy, but selected groups still compose deny > ask > allow. Last-match
@@ -93,7 +94,7 @@ Do not replace a shipped group without carrying forward the safeguards you want.
 ## Troubleshooting and limitations
 
 - Invalid configuration blocks tools, including saved YOLO sessions. Inspect
-  `/perm status`, fix the named file, then `/reload`; no unsandboxed workaround.
+  `/pi-permission status`, fix the named file, then `/reload`; no unsandboxed workaround.
 - Missing dependencies are for the user to install. Do not manage environments.
 - Bash reads broadly except denies, network is unrestricted, runtime temporary
   exceptions remain, and Linux glob denies mask launch-time entries. Hardlinks

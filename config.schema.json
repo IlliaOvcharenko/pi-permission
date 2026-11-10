@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://pi-perm.local/config.schema.json",
-  "title": "pi-perm v2 global or trusted project overlay",
+  "$id": "https://pi-permission.local/config.schema.json",
+  "title": "pi-permission v2 global or trusted project overlay",
   "$comment": "See docs/configs.md. Runtime validation also checks references, parser syntax, and resolved sandbox invariants.",
   "type": "object",
   "additionalProperties": false,
@@ -27,9 +27,9 @@
       "properties": {
         "removeLegacySections": { "type": "array", "items": { "enum": ["permission_mode", "permission_mode_docs", "permission_mode_steering"] } },
         "sections": {
-          "type": "object", "propertyNames": { "pattern": "^pi_perm_[a-z][a-z0-9_]*$" },
+          "type": "object", "propertyNames": { "pattern": "^pi_permission_[a-z][a-z0-9_]*$" },
           "properties": {
-            "pi_perm_runtime": {
+            "pi_permission_runtime": {
               "type": "object", "additionalProperties": false,
               "properties": { "source": { "const": "runtime" }, "when": { "const": "sandboxed" } }
             }

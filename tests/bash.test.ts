@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { bashDecision, classifyTree, type NodeLike } from "../src/bash.ts";
 import { parseSettings } from "../src/config.ts";
 import type { PolicyContext } from "../src/types.ts";
-const ctx: PolicyContext = { root: process.cwd(), home: "/home/test", scratch: "/tmp/test", agentDir: "/home/test/.pi/agent", mode: "plan", readRoots: [], denyRead: [], trustFile: "/home/test/.pi/agent/pi-perm/trust/projects.json" };
+const ctx: PolicyContext = { root: process.cwd(), home: "/home/test", scratch: "/tmp/test", agentDir: "/home/test/.pi/agent", mode: "plan", readRoots: [], denyRead: [], trustFile: "/home/test/.pi/agent/pi-permission/trust/projects.json" };
 const node = (type: string, text: string, children: NodeLike[] = []): NodeLike => ({ type, text, children });
 const cmd = (name: string, args: string[] = []) => node("program", "", [node("command", "", [node("command_name", name, [node("word", name)]), ...args.map(a => node("word", a))])]);
 

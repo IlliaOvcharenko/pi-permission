@@ -70,7 +70,7 @@ export function sandboxProfile(ctx: PolicyContext): RuntimeProfile {
   };
 }
 export function makeScratch(sessionId: string): string {
-  const base = path.join(os.tmpdir(), "pi-perm");
+  const base = path.join(os.tmpdir(), "pi-permission");
   mkdirSync(base, { recursive: true, mode: 0o700 });
   const stat = lstatSync(base);
   if (!stat.isDirectory() || stat.isSymbolicLink() || (process.getuid && stat.uid !== process.getuid()) || (stat.mode & 0o077) !== 0) {
@@ -144,7 +144,7 @@ export class Sandbox {
       // Avoid shell startup injection even when inherited from the host.
       delete env.BASH_ENV; delete env.ENV;
       if (isYolo(ctx)) return await this.run(command, cwd, { ...opts, env });
-      if (this.platform !== "darwin" && this.platform !== "linux") throw new Error("pi-perm sandbox supports macOS and Linux only; refusing unsandboxed execution");
+      if (this.platform !== "darwin" && this.platform !== "linux") throw new Error("pi-permission sandbox supports macOS and Linux only; refusing unsandboxed execution");
       this.manager ??= await this.load();
       if (!this.manager.isSupportedPlatform()) throw new Error("OS sandbox unsupported; execution refused");
       const profile = sandboxProfile(ctx);
@@ -157,7 +157,7 @@ export class Sandbox {
         this.initialized = true;
       }
       if (!this.manager.isSandboxingEnabled()) throw new Error("Sandbox disabled; execution refused");
-      this.transport ??= mkdtempSync(path.join(os.tmpdir(), "pi-perm-commands-"));
+      this.transport ??= mkdtempSync(path.join(os.tmpdir(), "pi-permission-commands-"));
       file = path.join(this.transport, randomUUID() + ".sh");
       writeFileSync(file, command, { mode: 0o600, flag: "wx" });
       const executionProfile: RuntimeProfile = {

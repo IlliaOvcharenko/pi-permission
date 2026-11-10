@@ -7,9 +7,9 @@ import { Sandbox, sandboxProfile, runtimeDenyPattern, type RuntimeManager } from
 import { canonicalPath } from "../src/paths.ts";
 import type { PolicyContext } from "../src/types.ts";
 function fixture() {
-  const dir = canonicalPath(mkdtempSync(path.join(os.tmpdir(), "pi-perm-sandbox-")));
+  const dir = canonicalPath(mkdtempSync(path.join(os.tmpdir(), "pi-permission-sandbox-")));
   mkdirSync(path.join(dir, "scratch"));
-  const c: PolicyContext = { root: dir, scratch: path.join(dir, "scratch"), home: "/home/test", agentDir: "/home/test/.pi/agent", mode: "plan", readRoots: [], denyRead: ["/private-data"], trustFile: "/home/test/.pi/agent/pi-perm/trust/projects.json" };
+  const c: PolicyContext = { root: dir, scratch: path.join(dir, "scratch"), home: "/home/test", agentDir: "/home/test/.pi/agent", mode: "plan", readRoots: [], denyRead: ["/private-data"], trustFile: "/home/test/.pi/agent/pi-permission/trust/projects.json" };
   const events: string[] = [];
   const manager: RuntimeManager = {
     isSupportedPlatform: () => true, isSandboxingEnabled: () => true,

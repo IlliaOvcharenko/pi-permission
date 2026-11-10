@@ -4,6 +4,10 @@ import { MODE_ENTRY, savedMode, startMode } from "../src/sessions.ts";
 import { parseSettings } from "../src/config.ts";
 const entry = (mode: string) => ({ type: "custom", customType: MODE_ENTRY, data: { mode } });
 
+test("mode persistence uses the pi-permission namespace", () => {
+  assert.equal(MODE_ENTRY, "pi-permission.mode");
+  assert.equal(savedMode([{ type: "custom", customType: "pi-perm.mode", data: { mode: "yolo" } }]), undefined);
+});
 test("destination mode wins over previous session environment on resume", () => {
   assert.equal(startMode({ reason: "resume", entries: [entry("approve")], defaultMode: "plan", inherited: "build", flag: "build" }), "approve");
 });

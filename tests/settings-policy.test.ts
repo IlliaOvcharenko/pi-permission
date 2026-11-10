@@ -10,7 +10,7 @@ import { canonicalPath } from "../src/paths.ts";
 import type { Action, PolicyContext } from "../src/types.ts";
 const v2 = (value: object) => ({ configVersion: 2, ...value });
 function context(value: unknown = {}): PolicyContext {
-  return { root: canonicalPath(process.cwd()), scratch: canonicalPath(os.tmpdir()), home: "/home/test", agentDir: "/home/test/.pi/agent", mode: "build", settings: parseSettings(value), readRoots: [], denyRead: [], trustFile: "/home/test/.pi/agent/pi-perm/trust/projects.json" };
+  return { root: canonicalPath(process.cwd()), scratch: canonicalPath(os.tmpdir()), home: "/home/test", agentDir: "/home/test/.pi/agent", mode: "build", settings: parseSettings(value), readRoots: [], denyRead: [], trustFile: "/home/test/.pi/agent/pi-permission/trust/projects.json" };
 }
 test("all action combinations across groups compose strictly, regardless of selection order", () => {
   const rank = { allow: 0, ask: 1, deny: 2 };
@@ -69,7 +69,7 @@ test("empty roots forbid writes and never silently add scratch; policy defaults 
   assert.equal(writeDecision(c, path.join(c.scratch, "x")).action, "deny");
   // Exercise configurable formerly denied names on disposable scratch paths,
   // never on the host checkout's sandbox-denied directories.
-  c.root = path.join(c.scratch, "pi-perm-disposable-policy");
+  c.root = path.join(c.scratch, "pi-permission-disposable-policy");
   assert.equal(readDecision(c, "notes/x").action, "allow");
   c.settings = parseSettings(v2({ permissionGroups: { development: { "bash-sandbox": { enabled: true } } } }));
   assert.equal(writeDecision(c, path.join(c.root, ".env")).action, "allow");

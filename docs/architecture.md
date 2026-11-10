@@ -17,7 +17,7 @@
    SHA-256 binds its bytes/location, resolved candidate policy/prompt text, and
    read-root canonical paths/kinds. Session-specific scratch identity is excluded.
    `src/grants.ts` persists policy digests outside the project in
-   `<agentDir>/pi-perm/trust/projects.json`, retaining legacy grant records without
+   `<agentDir>/pi-permission/trust/projects.json`, retaining legacy grant records without
    activating them as v2 authority. A refused/no-UI/oversized review blocks tools.
 5. Project bytes/location and root identities are rechecked before turns, tool
    calls and built-in execution. Changed authority blocks until successful
@@ -67,7 +67,7 @@ Full field and precedence contracts: [configs.md](configs.md).
 
 ## Prompts, colors and sessions
 
-- `src/prompts.ts` refreshes only `pi_perm_*` and explicitly configured known legacy
+- `src/prompts.ts` refreshes only `pi_permission_*` and explicitly configured known legacy
   sections before each turn. Generated runtime facts list selected groups/sources,
   parser rules, filesystem policy and Bash restrictions separately. They cannot be
   overridden. Shared/mode prompt text is advisory, not a permission grant.
@@ -75,8 +75,8 @@ Full field and precedence contracts: [configs.md](configs.md).
   behavioral. Plan extensions/Bash roots are editable shipped policy.
 - Strict mode `#RRGGBB` values render through concrete RGB `theme.style`; existing
   theme tokens use `theme.fg`. Missing color support falls back to plain text.
-- `src/sessions.ts` saves branch-local `pi-perm.mode`. Commands/Alt+M update it;
-  tree navigation restores the destination. Startup `--perm` takes precedence;
+- `src/sessions.ts` saves branch-local `pi-permission.mode`. Commands/Alt+M update it;
+  tree navigation restores the destination. Startup `--pi-permission` takes precedence;
   non-YOLO environment inheritance never overrides saved selections. Reload
   restores the current session, including previously explicitly selected YOLO.
 

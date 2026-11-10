@@ -1,4 +1,4 @@
-# pi-perm
+# pi-permission
 
 A personal permission extension for Pi, independent of `pi-permission-modes`.
 **Enable only one permission extension at a time.** This is not a compatible
@@ -45,8 +45,8 @@ filesystem propagation, trust model, colors, migration and limitations.
 | File | Role |
 | --- | --- |
 | Package `defaults.json` | Automatically loaded shipped groups/modes/prompts. |
-| `<agentDir>/pi-perm/config.json` | Optional global authoritative overlay; normally `~/.pi/agent/pi-perm/config.json`. |
-| `<project>/.pi/pi-perm.json` | Optional authoritative project overlay, after Pi trust and content-bound UI approval. |
+| `<agentDir>/pi-permission/config.json` | Optional global authoritative overlay; normally `~/.pi/agent/pi-permission/config.json`. |
+| `<project>/.pi/pi-permission.json` | Optional authoritative project overlay, after Pi trust and content-bound UI approval. |
 | Package `config.example.json` | Non-live example; not loaded. |
 | Package `config.schema.json` | Same editor schema at both scopes; runtime validation remains authoritative. |
 
@@ -121,7 +121,7 @@ edit queues and diffs. Search globs and permission globs are different languages
 A project policy is an authority source, not merely a restriction request.
 **Trust project permission policy?** shows its contents, location and digest.
 No UI, refusal, invalid config or an oversized review blocks execution. Approval
-is stored outside the project in `<agentDir>/pi-perm/trust/projects.json` and
+is stored outside the project in `<agentDir>/pi-permission/trust/projects.json` and
 binds project bytes/location, resolved policy/prompt text and read-root identities.
 Changed/retargeted roots need fresh review. Legacy read-grant records do not
 automatically authorize v2 policy.
@@ -132,8 +132,8 @@ policy cannot silently approve its own expansion. Configuration/prompt changes
 activate only on successful startup or `/reload`. Already running commands keep
 their launch profile. Invalid reload never partially activates a policy.
 
-The extension refreshes `pi_perm_*` prompt sections before every turn.
-`pi_perm_runtime` is generated and cannot be replaced/disabled. Other shared/mode
+The extension refreshes `pi_permission_*` prompt sections before every turn.
+`pi_permission_runtime` is generated and cannot be replaced/disabled. Other shared/mode
 prose and extra namespaced sections are editable; `@file` text loads on reload.
 Unrelated prompt sections are preserved. See the configuration reference for
 explicit section-field merge rules.
@@ -141,18 +141,18 @@ explicit section-field merge rules.
 ## Commands and sessions
 
 ```text
-/perm plan | approve | build
-/perm yolo                 Explicit warning and confirmation
-/perm status               Mode, groups/sources, filesystem, scratch, cycle, errors
-/perm config               Resolved policy, active mode, filesystem, Bash profile, prompts
-/perm trust                Reload and review pending project policy
-/perm revoke               Revoke persistent project-policy trust and block until review
-/perm clear-approvals      Forget same-request session tool approvals
+/pi-permission plan | approve | build
+/pi-permission yolo             Explicit warning and confirmation
+/pi-permission status           Mode, groups/sources, filesystem, scratch, cycle, errors
+/pi-permission config           Resolved policy, active mode, filesystem, Bash profile, prompts
+/pi-permission trust            Reload and review pending project policy
+/pi-permission revoke           Revoke persistent project-policy trust and block until review
+/pi-permission clear-approvals  Forget same-request session tool approvals
 ```
 
-`pi --perm plan` overrides startup mode only. Resume/reload restores that
+`pi --pi-permission plan` overrides startup mode only. Resume/reload restores that
 session's saved mode, not another session's environment mode. Tree navigation
-restores the destination branch. `PI_PERM_MODE` forwards only non-YOLO modes to
+restores the destination branch. `PI_PERMISSION_MODE` forwards only non-YOLO modes to
 startup children, never overriding an existing saved selection. Session approvals
 are keyed by mode and the exact request, not executable name alone.
 
@@ -166,12 +166,15 @@ are keyed by mode and the exact request, not executable name alone.
    arbitrated. Never load two permission extensions.
 3. Register the checkout, for example `pi install /absolute/path/to/pi-permission`.
    Local packages load in place; source files alone do not activate it.
-4. **Migrate old pi-perm configuration before `/reload`** using
-   [docs/configs.md#migration-from-version-1](docs/configs.md#migration-from-version-1).
+4. **Migrate old names before restarting/reloading** using
+   [Rename from pi-perm](docs/configs.md#rename-from-pi-perm). The old config
+   paths are not loaded; move global/project policy and rename prompt sections
+   before relying on your existing restrictions. For version-1 configs also use
+   [the schema migration](docs/configs.md#migration-from-version-1).
    `shared`, `permission`, `permission.groups`, `safeCommands`, ambiguous `read`,
    action wrappers and obsolete network/macOS options fail validation. There is
    no automatic live-config rewrite or legacy session import.
-5. Restart in Plan, inspect `/perm status` and `/perm config`, review project
+5. Restart in Plan, inspect `/pi-permission status` and `/pi-permission config`, review project
    authority, and test on disposable data before relying on containment.
 
 Defaults preserve prompt guidance to re-read files and preserve manual edits,

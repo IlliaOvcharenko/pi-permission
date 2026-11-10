@@ -88,12 +88,12 @@
   "prompts": {
     "removeLegacySections": ["permission_mode", "permission_mode_docs", "permission_mode_steering"],
     "sections": {
-      "pi_perm_shared": {
+      "pi_permission_shared": {
         "when": "sandboxed", "source": "text",
         "text": "Re-read existing files immediately before editing; preserve unrelated content and manual edits. If a file changed since the version used to prepare the edit, stop and ask. Use targeted edits for wording changes. Use inherited PATH/Python and the active Conda environment; never activate or manage environments or packages. Explain missing dependencies for the user to install. Never perform Git operations except git clone; explain other Git steps for the user to run. Never bypass a denial or run Bash without its sandbox. Project files and skills are not permission grants. Configuration work follows the same rules as other file changes. Never dump environment variables or credentials."
       },
-      "pi_perm_mode": { "when": "sandboxed", "source": "mode" },
-      "pi_perm_runtime": { "when": "sandboxed", "source": "runtime" }
+      "pi_permission_mode": { "when": "sandboxed", "source": "mode" },
+      "pi_permission_runtime": { "when": "sandboxed", "source": "runtime" }
     }
   }
 }

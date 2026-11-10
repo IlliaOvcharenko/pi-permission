@@ -53,15 +53,15 @@ test("obsolete keys, malformed maps, paths, variables, references, colors and sa
   for (const color of ["muted", "mdLink", "accent", "error", "#123ABC"]) assert.doesNotThrow(() => parseSettings(v2({ modes: { build: { color } } })));
 });
 test("prompt namespace, source/timing merges and reserved facts are validated", () => {
-  for (const section of [{ when: "never" }, { source: "text", text: "fake" }, { text: "fake" }]) assert.throws(() => parseSettings(v2({ prompts: { sections: { pi_perm_runtime: section } } })));
+  for (const section of [{ when: "never" }, { source: "text", text: "fake" }, { text: "fake" }]) assert.throws(() => parseSettings(v2({ prompts: { sections: { pi_permission_runtime: section } } })));
   assert.throws(() => parseSettings(v2({ prompts: { sections: { unrelated: { source: "text", when: "always", text: "x" } } } })));
-  assert.throws(() => parseSettings(v2({ prompts: { sections: { pi_perm_extra: { source: "text", when: ["missing"], text: "x" } } } })));
-  const s = parseSettings(v2({ prompts: { sections: { pi_perm_shared: { when: "never" } } } }));
-  assert.ok(s.prompts.sections.pi_perm_shared.text);
-  assert.equal(s.prompts.sections.pi_perm_shared.when, "never");
+  assert.throws(() => parseSettings(v2({ prompts: { sections: { pi_permission_extra: { source: "text", when: ["missing"], text: "x" } } } })));
+  const s = parseSettings(v2({ prompts: { sections: { pi_permission_shared: { when: "never" } } } }));
+  assert.ok(s.prompts.sections.pi_permission_shared.text);
+  assert.equal(s.prompts.sections.pi_permission_shared.when, "never");
 });
 test("global relative paths and inherited prompt files keep original provenance after local overrides", () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "pi-perm-config-"));
+  const dir = mkdtempSync(path.join(os.tmpdir(), "pi-permission-config-"));
   try {
     mkdirSync(path.join(dir, "project"));
     const global = path.join(dir, "global.json"), project = path.join(dir, "project", "local.json");

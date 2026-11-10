@@ -15,7 +15,7 @@ test("project grants require exact approved path and kind", () => {
   assert.equal(grantCovers({ path: "/data", kind: "directory" }, "/data-other/a"), false);
 });
 test("trust is isolated by project and survives a reload from disk", () => {
-  const dir = canonicalPath(mkdtempSync(path.join(os.tmpdir(), "pi-perm-grants-")));
+  const dir = canonicalPath(mkdtempSync(path.join(os.tmpdir(), "pi-permission-grants-")));
   try {
     const project = path.join(dir, "project"), ref = path.join(dir, "reference");
     mkdirSync(project); mkdirSync(ref);
@@ -31,7 +31,7 @@ test("trust is isolated by project and survives a reload from disk", () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 test("symlink retargeting requires new trust; missing requests fail closed", () => {
-  const dir = canonicalPath(mkdtempSync(path.join(os.tmpdir(), "pi-perm-links-")));
+  const dir = canonicalPath(mkdtempSync(path.join(os.tmpdir(), "pi-permission-links-")));
   try {
     for (const name of ["a", "b"]) mkdirSync(path.join(dir, name));
     const link = path.join(dir, "reference");

@@ -32,7 +32,7 @@ function runtimeText(ctx: PolicyContext): string {
   const bash = filesystemPolicy(ctx, true);
   const groups = selectedGroups(ctx);
   return [
-    `## pi-perm runtime — ${literal(ctx.mode)}`,
+    `## pi-permission runtime — ${literal(ctx.mode)}`,
     "Bash must use its OS sandbox. Failure means refusal, never an unsandboxed fallback.",
     list("Active groups (independent restrictions)", groups.map(([n, g]) => `${literal(n)} — ${literal(g.source)}`)),
     "Last matching pattern wins within a map. Across selected groups: deny > ask > allow. Unspecified tools allow. Named tools replace only their group's wildcard fallback. Local same-name groups replace inherited groups entirely.",
@@ -74,7 +74,7 @@ export function promptSections(ctx: PolicyContext): Record<string, string> {
 export function applyPromptSections(sections: Record<string, string>, ctx: PolicyContext): void {
   // Clear only our namespace and explicitly declared legacy permission sections.
   // This also removes text cached in a resumed session after a mode/config change.
-  for (const name of Object.keys(sections)) if (name === "pi_perm" || name.startsWith("pi_perm_")) delete sections[name];
+  for (const name of Object.keys(sections)) if (name === "pi_permission" || name.startsWith("pi_permission_")) delete sections[name];
   for (const name of (ctx.settings ?? DEFAULT_SETTINGS).prompts.removeLegacySections) delete sections[name];
   Object.assign(sections, promptSections(ctx));
 }

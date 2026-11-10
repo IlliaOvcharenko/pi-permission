@@ -1,6 +1,6 @@
-# pi-perm: project map
+# pi-permission: project map
 
-`pi-perm` is a Pi permission extension with four fixed modes. It combines **tool-call decisions** (allow, ask, deny) with **OS sandboxing of Bash** in every mode except YOLO. It is not a replacement for OS/container isolation, nor a compatible loader for `pi-permission-modes` configuration. Run only one permission extension at a time.
+`pi-permission` is a Pi permission extension with four fixed modes. It combines **tool-call decisions** (allow, ask, deny) with **OS sandboxing of Bash** in every mode except YOLO. It is not a replacement for OS/container isolation, nor a compatible loader for `pi-permission-modes` configuration. Run only one permission extension at a time.
 
 ## Read in this order
 
@@ -25,8 +25,8 @@
 | Mode | Bash | File changes | Selection |
 | --- | --- | --- | --- |
 | Plan | Sandbox; scratch-only writes | Requested Markdown only; request condition is instructional | Default |
-| Approve | Sandbox; project + scratch writes | Propose every filename and await explicit chat confirmation (instructional) | `/perm approve` or cycle |
-| Build | Sandbox; project + scratch writes | Requested task without separate chat confirmation | `/perm build` or cycle |
-| YOLO | Unsandboxed; permission checks bypassed | Unrestricted by this extension | Explicit `/perm yolo` + UI confirmation; saved selection can be restored |
+| Approve | Sandbox; project + scratch writes | Propose every filename and await explicit chat confirmation (instructional) | `/pi-permission approve` or cycle |
+| Build | Sandbox; project + scratch writes | Requested task without separate chat confirmation | `/pi-permission build` or cycle |
+| YOLO | Unsandboxed; permission checks bypassed | Unrestricted by this extension | Explicit `/pi-permission yolo` + UI confirmation; saved selection can be restored |
 
 Shipped non-YOLO groups share configurable read denies, protected-write checks and project/scratch boundaries. These ordinary policies are replaceable; trust-store protection and mandatory sandboxing remain structural. Plan's configured Markdown extension is checked, but whether a change was requested is not; Approve's chat consent is not mechanically verified.

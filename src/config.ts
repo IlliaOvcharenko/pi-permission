@@ -130,7 +130,7 @@ export function resolveSettings(layers: ConfigLayer[]): Settings {
       if (result.prompts.removeLegacySections.some(n => !["permission_mode", "permission_mode_docs", "permission_mode_steering"].includes(n))) throw new Error("Only known legacy sections can be removed");
     }
     for (const [name, value] of Object.entries(object(prompts.sections ?? {}, "prompt sections"))) {
-      if (!/^pi_perm_[a-z][a-z0-9_]*$/.test(name)) throw new Error("Prompt sections require pi_perm_ namespace");
+      if (!/^pi_permission_[a-z][a-z0-9_]*$/.test(name)) throw new Error("Prompt sections require pi_permission_ namespace");
       const patch = object(value, name); keys(patch, ["source", "when", "text"], name);
       const section = { ...result.prompts.sections[name], ...patch } as PromptSection;
       if (patch.source !== undefined && patch.source !== result.prompts.sections[name]?.source && patch.text === undefined) delete section.text;
@@ -138,7 +138,7 @@ export function resolveSettings(layers: ConfigLayer[]): Settings {
       if (!["text", "mode", "runtime"].includes(section.source)) throw new Error("Invalid prompt source");
       if (Array.isArray(section.when) ? section.when.some(n => !isMode(n)) : !["sandboxed", "always", "never"].includes(section.when)) throw new Error("Invalid prompt timing");
       if (section.source === "text" ? typeof section.text !== "string" : section.text !== undefined) throw new Error("Only text-source sections accept text");
-      if (name === "pi_perm_runtime" ? section.source !== "runtime" || section.when !== "sandboxed" : section.source === "runtime") throw new Error("pi_perm_runtime cannot be overridden or disabled");
+      if (name === "pi_permission_runtime" ? section.source !== "runtime" || section.when !== "sandboxed" : section.source === "runtime") throw new Error("pi_permission_runtime cannot be overridden or disabled");
       for (const field of Object.keys(patch)) result.promptSources[`sections.${name}.${field}`] = { source: layer.source, ...(field === "text" && typeof patch.text === "string" && patch.text.startsWith("@") ? { file: absolutePath(layer.base, patch.text.slice(1), os.homedir()) } : {}) };
       if (section.text === undefined) delete result.promptSources[`sections.${name}.text`];
       result.prompts.sections[name] = section;

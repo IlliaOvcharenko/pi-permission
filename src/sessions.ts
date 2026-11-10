@@ -1,6 +1,6 @@
 import { isMode, type Mode, type SessionEntryLike, type Settings } from "./types.ts";
 import { DEFAULT_SETTINGS } from "./config.ts";
-export const MODE_ENTRY = "pi-perm.mode";
+export const MODE_ENTRY = "pi-permission.mode";
 export function savedMode(entries: readonly SessionEntryLike[], names: readonly string[] = Object.keys(DEFAULT_SETTINGS.modes)): Mode | undefined {
   let mode: Mode | undefined;
   for (const entry of entries) {
@@ -21,7 +21,7 @@ export function startMode(options: {
   const modes = options.modes ?? DEFAULT_SETTINGS.modes;
   const names = Object.keys(modes);
   if (options.reason === "startup" && options.flag !== undefined) {
-    if (!isMode(options.flag, names)) throw new Error(`Unknown --perm mode: ${String(options.flag)}`);
+    if (!isMode(options.flag, names)) throw new Error(`Unknown --pi-permission mode: ${String(options.flag)}`);
     return options.flag;
   }
   const saved = savedMode(options.entries, names);

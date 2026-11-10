@@ -8,7 +8,7 @@ Validation: all 61 tests passed; `tsc --noEmit` passed. This review did not test
 
 ## Findings, in priority order
 
-1. **Bug: CLI YOLO skips confirmation.** `startMode()` accepts `--perm yolo`, and startup applies it without the warning used by `/perm yolo`. A fresh session can therefore start unrestricted without UI confirmation, including without a UI. Saved YOLO restoration is documented; this separate startup path is not. Route fresh CLI selection through confirmation, or reject CLI YOLO. (`src/sessions.ts`, `src/index.ts`)
+1. **Bug: CLI YOLO skips confirmation.** `startMode()` accepts `--pi-permission yolo`, and startup applies it without the warning used by `/pi-permission yolo`. A fresh session can therefore start unrestricted without UI confirmation, including without a UI. Saved YOLO restoration is documented; this separate startup path is not. Route fresh CLI selection through confirmation, or reject CLI YOLO. (`src/sessions.ts`, `src/index.ts`)
 
 2. **Bug: attached option paths bypass the exploration prompt.** Confirmed: `rg -f/etc/hosts README.md` is automatically allowed, while `rg -f /etc/hosts README.md` asks. The classifier does not recognize the attached filename as a path. The sandbox still applies, but its broad reads permit files outside approved file-tool roots. This contradicts the stated conservative treatment of external paths. Parse supported options explicitly, or make ambiguous forms ask. (`src/bash.ts`)
 

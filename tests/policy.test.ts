@@ -9,10 +9,10 @@ import { canonicalPath } from "../src/paths.ts";
 import type { Mode, PolicyContext } from "../src/types.ts";
 
 function fixture() {
-  const base = canonicalPath(mkdtempSync(path.join(os.tmpdir(), "pi-perm-policy-")));
+  const base = canonicalPath(mkdtempSync(path.join(os.tmpdir(), "pi-permission-policy-")));
   const root = path.join(base, "project"), home = path.join(base, "home"), scratch = path.join(base, "scratch");
   for (const p of [root, home, scratch, path.join(home, ".ssh"), path.join(root, "notes"), path.join(home, ".pi", "agent")]) mkdirSync(p, { recursive: true });
-  const c: PolicyContext = { root, home, scratch, agentDir: path.join(home, ".pi", "agent"), mode: "plan", readRoots: [], denyRead: [], trustFile: path.join(home, ".pi", "agent", "pi-perm", "trust", "projects.json") };
+  const c: PolicyContext = { root, home, scratch, agentDir: path.join(home, ".pi", "agent"), mode: "plan", readRoots: [], denyRead: [], trustFile: path.join(home, ".pi", "agent", "pi-permission", "trust", "projects.json") };
   return { c, cleanup: () => rmSync(base, { recursive: true, force: true }) };
 }
 test("all sandboxed modes allow normal project reads and hard-deny private paths", () => {

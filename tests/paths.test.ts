@@ -19,7 +19,7 @@ test("path boundaries and command pattern argument boundaries", () => {
   assert.throws(() => commandWords("npm 'oops"));
 });
 test("dangling symlink targets cannot masquerade as project paths", () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "pi-perm-paths-"));
+  const dir = mkdtempSync(path.join(os.tmpdir(), "pi-permission-paths-"));
   try {
     mkdirSync(path.join(dir, "project"));
     symlinkSync(path.join(dir, "outside", "missing"), path.join(dir, "project", "link"));

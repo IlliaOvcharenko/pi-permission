@@ -1,7 +1,7 @@
 # Configuration reference (version 2)
 
-This is the shared format for `<agentDir>/pi-perm/config.json` and
-`<project>/.pi/pi-perm.json`. Neither `config.example.json` nor this document is
+This is the shared format for `<agentDir>/pi-permission/config.json` and
+`<project>/.pi/pi-permission.json`. Neither `config.example.json` nor this document is
 loaded as policy. Runtime validation in `src/config.ts` is authoritative;
 `config.schema.json` supplies editor hints. No live configuration is migrated or
 written automatically.
@@ -72,7 +72,7 @@ Resolution is shipped defaults → global → trusted project:
 A global group asking for Bash can be replaced locally by a group allowing Bash.
 Global configuration is **not an administrator ceiling**. This requires trusted
 project loading, not tighten-only semantics. Group source files and mode-field
-sources appear in `/perm config`; `replacements` explains which defining source
+sources appear in `/pi-permission config`; `replacements` explains which defining source
 replaced each earlier group and `promptSources` retains defining files for prompt
 fields. Selected group sources appear in status and runtime facts.
 
@@ -231,7 +231,7 @@ The dialog shows the project file, raw configuration, digest and relaxation
 warning. Review referenced prompt files too; they are trusted configuration.
 
 Approval is stored outside the project in
-`<agentDir>/pi-perm/trust/projects.json`, keyed by canonical project root. Its
+`<agentDir>/pi-permission/trust/projects.json`, keyed by canonical project root. Its
 SHA-256 digest includes project bytes/location, resolved configuration (including
 loaded prompt text), and read-root identities. Changing global inherited policy
 can also require fresh project review. Scratch identity is session-private and
@@ -244,7 +244,7 @@ execution until successful `/reload` and approval. Already running commands reta
 their launch profile. Prompt text is loaded only on reload, not live-reloaded;
 changes to referenced text are part of the next approval digest.
 
-`/perm trust` initiates reload/review; `/perm revoke` removes stored policy trust
+`/pi-permission trust` initiates reload/review; `/pi-permission revoke` removes stored policy trust
 and blocks the current session until review or project-policy removal. The trust
 registry and private command transport remain structurally write-protected,
 even if project policy removes all ordinary protected paths. A project policy
@@ -261,11 +261,45 @@ terminal control sequences are invalid.
 `systemPrompt` replaces and `systemPromptAppend` supplements a mode's prose.
 Both accept inline text or `@file`. Prompt section definitions use
 `source: text | mode`, `when: sandboxed | always | never | [mode IDs]`, and `text`
-only for text sources. `pi_perm_runtime` is reserved, generated, sandboxed-only,
+only for text sources. `pi_permission_runtime` is reserved, generated, sandboxed-only,
 and cannot be replaced or disabled. Before each turn, only extension-owned
-`pi_perm_*` sections and configured known legacy sections are refreshed/removed.
+`pi_permission_*` sections and configured known legacy sections are refreshed/removed.
 Prompt instructions cannot grant mechanically denied tools. Approve filename/chat
 confirmation, re-reading, and whether Plan edits were requested are behavioral.
+
+## Rename from pi-perm
+
+This is a breaking naming change, not a schema-version change (`configVersion: 2`
+remains current). There are no old-name command, flag, environment or config aliases.
+Before restarting/reloading, back up and migrate live settings yourself:
+
+| Old | New |
+| --- | --- |
+| Package/status name `pi-perm` | `pi-permission` |
+| `/perm` | `/pi-permission` |
+| `--perm` | `--pi-permission` |
+| `<agentDir>/pi-perm/config.json` | `<agentDir>/pi-permission/config.json` |
+| `<project>/.pi/pi-perm.json` | `<project>/.pi/pi-permission.json` |
+| `<agentDir>/pi-perm/trust/projects.json` | `<agentDir>/pi-permission/trust/projects.json` |
+| `PI_PERM_MODE` | `PI_PERMISSION_MODE` |
+| Prompt section prefix `pi_perm_` | `pi_permission_` |
+| Session entry `pi-perm.mode` | `pi-permission.mode` |
+| Temporary scratch/transport prefix `pi-perm` | `pi-permission` |
+
+Old config paths are ignored, so unmigrated restrictions do not apply. Rename
+custom prompt section keys as well as paths; old section keys in a migrated
+config fail validation. Moving global config changes the base for relative paths
+and `@file` prompts: move those resources or adjust references to preserve targets.
+Do not overwrite an existing destination config blindly; reconcile it manually.
+
+Project policy must be reviewed again because its path and resolved policy are
+part of the trust digest. There is no need to copy old trust approvals; the new
+registry starts empty. Old session entries are not imported: select the intended
+mode explicitly (old YOLO selections are not restored). Restart Pi to clear old
+process environment, prompt/status state and loaded extension code; never load
+both versions. No live files, session records or dependencies are moved automatically.
+Inspect `/pi-permission status` and `/pi-permission config`, then test disposable
+data. References to the separate upstream `pi-permission-modes` project are unchanged.
 
 ## Migration from version 1
 
@@ -289,7 +323,7 @@ confirmation, re-reading, and whether Plan edits were requested are behavioral.
 7. Project configs now have the same keys and can relax policy, but require
    whole-policy content-bound trust. Old read-grant approval alone is insufficient.
 8. Remove obsolete network/macOS options. Networking remains unrestricted and
-   no network controls are exposed. Use `/reload`, inspect `/perm config`, and
+   no network controls are exposed. Use `/reload`, inspect `/pi-permission config`, and
    test disposable data before relying on the new policy.
 
 ## Structural safeguards and limits

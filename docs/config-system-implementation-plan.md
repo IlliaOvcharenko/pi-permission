@@ -274,7 +274,7 @@ Primary files: `src/index.ts`, `src/prompts.ts`, `src/sessions.ts` as needed.
 Update:
 
 - Startup/reload initialization and failures.
-- `/perm status` and `/perm config`.
+- `/pi-permission status` and `/pi-permission config`.
 - Tool approval/refusal details.
 - Effective runtime prompt sections.
 - File-tool execution-time checks and search wrappers.
@@ -359,7 +359,7 @@ Move long explanatory `$comment` content into the reference, leaving at most a s
 
 - Startup, reload, branch/session mode restoration, and selected groups.
 - Project-policy trust and policy-change handling once the mechanism is finalized.
-- `/perm config`, runtime prompts, and execution-time checks.
+- `/pi-permission config`, runtime prompts, and execution-time checks.
 - Theme tokens, valid hex, malformed hex, absent UI.
 
 Existing test ownership remains in the corresponding `tests/*.test.ts` modules. Add modules only when responsibility warrants it, and update `docs/file-map.md` for additions.

@@ -25,12 +25,12 @@ function readRegistry(file: string): Registry {
   let raw: unknown;
   try { raw = JSON.parse(readFileSync(file, "utf8")); } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, projects: {} };
-    throw new Error(`Cannot read pi-perm trust registry: ${String(error)}`);
+    throw new Error(`Cannot read pi-permission trust registry: ${String(error)}`);
   }
   const r = raw as Registry;
-  if (!r || r.version !== 1 || !r.projects || typeof r.projects !== "object" || Array.isArray(r.projects)) throw new Error("Invalid pi-perm trust registry");
+  if (!r || r.version !== 1 || !r.projects || typeof r.projects !== "object" || Array.isArray(r.projects)) throw new Error("Invalid pi-permission trust registry");
   for (const grants of Object.values(r.projects)) {
-    if (!Array.isArray(grants) || grants.some(g => !g || typeof g.path !== "string" || !path.isAbsolute(g.path) || !["file", "directory"].includes(g.kind))) throw new Error("Invalid pi-perm trust entries");
+    if (!Array.isArray(grants) || grants.some(g => !g || typeof g.path !== "string" || !path.isAbsolute(g.path) || !["file", "directory"].includes(g.kind))) throw new Error("Invalid pi-permission trust entries");
   }
   if (r.policies !== undefined && (!r.policies || typeof r.policies !== "object" || Array.isArray(r.policies) || Object.values(r.policies).some(d => !/^[a-f0-9]{64}$/.test(d)))) throw new Error("Invalid project policy trust entries");
   return r;
