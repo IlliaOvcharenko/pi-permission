@@ -36,6 +36,18 @@ rule, whether Plan edits were requested, and re-reading files are **behavioral**
 Ordinary mode policy can be replaced through configuration. Mandatory non-YOLO
 Bash sandboxing and trust-store protection are structural.
 
+### Permission dialogs
+
+`Allow tool call?` shows the full tool name and parameters, then the command and
+rule requiring consent. Parser limitations also identify the exact syntax or
+argument that prevents automatic approval; an `ask` is not necessarily a policy
+violation. Already-allowed commands and raw internal trace JSON are omitted from
+the explanation (the complete requested call is still shown).
+
+Choose **Allow once**, **Allow for session (same request)**, or **Deny**. Session
+consent applies only to the same mode and exact review details. No UI or a request
+larger than the review limit refuses execution; calls are never truncated for approval.
+
 ## Tool boundaries
 
 | Tool | Checks outside YOLO |

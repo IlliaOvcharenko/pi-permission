@@ -42,6 +42,17 @@ test("real parser adversarial command suite", async t => {
       if (command === "ls;") continue;
       assert.equal(decision.action, "ask", command);
     }
+    const mixed = await bashDecision("ls && python 'script name.py'", ctx, parser);
+    assert.deepEqual(mixed.trace?.filter(t => t.action === "ask").map(t => t.command), ["python 'script name.py'"]);
+    for (const [source, fragment] of [
+      ["ls $(touch data)", "$(touch data)"],
+      ["ls > data", "> data"],
+      ["find . -delete", "-delete"],
+      ["ls /etc", "/etc"],
+    ]) {
+      const decision = await bashDecision(source, ctx, parser);
+      assert.ok(decision.trace?.some(t => t.action === "ask" && t.explanation?.includes(fragment)), source);
+    }
     const custom = (bash: unknown): PolicyContext => ({ ...ctx, mode: "build", settings: parseSettings({ configVersion: 2, permissionGroups: { development: { "tool-parser": { bash }, "bash-sandbox": { enabled: true } } } }) });
     const exact = custom({ "*": "ask", "npm test": "allow", 'printf "two words"': "allow", "/bin/echo hi": "allow", rm: "deny" });
     for (const source of ["npm test", "npm 'test'", "printf 'two words'", "/bin/echo hi"]) assert.equal((await bashDecision(source, exact, parser)).action, "allow", source);
@@ -52,7 +63,13 @@ test("real parser adversarial command suite", async t => {
     assert.equal((await bashDecision("npm test; other-command", rest, parser)).action, "ask");
     const broad = custom("allow");
     assert.equal((await bashDecision("A=1 npm test > out", broad, parser)).action, "allow");
-    assert.equal((await bashDecision("npm test", exact, { parse: () => null })).action, "ask");
+    const failed = await bashDecision("npm test", exact, { parse: () => null });
+    assert.equal(failed.action, "ask");
+    assert.equal(failed.trace?.[0].command, "npm test");
+    assert.match(failed.trace?.[0].explanation ?? "", /parser unavailable or failed/);
+    const downgraded = await bashDecision("npm test > out", exact, parser);
+    assert.equal(downgraded.trace?.[0].ruleAction, "allow");
+    assert.equal(downgraded.trace?.[0].action, "ask");
     assert.equal((await bashDecision("npm test", broad, { parse: () => null })).action, "allow");
     assert.equal((await bashDecision("npm test", exact, { parse: () => { throw new Error("parse failed"); } })).action, "ask");
   } finally { parser.delete(); }

@@ -47,8 +47,13 @@ Full field and precedence contracts: [configs.md](configs.md).
    surroundings. Missing/failed parsing cannot earn narrow allows. Broad explicit
    wildcard consent remains possible but never disables containment. Grammar and
    conservative argument understanding are implementation capabilities, not policy.
-5. Ask prompts show the request and decision diagnostics. Session approvals bind
-   mode, title and exact details. No UI or oversized request refuses. File wrappers
+5. Ask prompts show the full tool name/parameters and only approval-requiring
+   traces, not raw diagnostic JSON. Bash traces retain original command text and
+   exact unsupported syntax, sensitive argument or path-check explanations. A
+   narrow allow downgraded to ask is labeled as unavailable automatic approval,
+   not a configured ask. Source provenance remains in internal traces. Session
+   approvals bind mode, title and exact details. No UI or oversized request refuses
+   without truncation. File wrappers
    repeat policy checks; native tools execute read/write/edit. Bounded grep/find/ls
    walkers filter denied entries and descendant symlinks; grep uses `rg --no-config`.
    Searches do not honor `.gitignore` and use a different glob syntax from policy.

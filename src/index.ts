@@ -202,8 +202,16 @@ export function createExtension(pi: ExtensionAPI, sdk: SDK, dependencies: Depend
       ? await bashDecision(String(input.command ?? ""), c)
       : toolDecision(c, event.toolName, raw, JSON.stringify(input));
     if (decision.action === "deny") return { block: true, reason: decision.reason };
-    if (decision.action === "ask" && !(await confirm(ctx, `Allow ${event.toolName}?`, `${decision.reason ?? ""}\n${JSON.stringify(decision.trace ?? [])}\n${JSON.stringify(input, null, 2)}`))) {
-      return { block: true, reason: "Permission refused (or no UI / request too large to review). Do not retry or rephrase it." };
+    if (decision.action === "ask") {
+      const reasons = (decision.trace ?? []).filter(t => t.action === "ask").map(t => [
+        ...(t.command !== undefined ? [`Approval required for: ${t.command}`] : []),
+        `Rule: ${t.group} → ${t.surface} ${JSON.stringify(t.pattern)} → ${t.ruleAction ?? t.action}${t.ruleAction === "allow" ? " (automatic approval unavailable)" : ""}`,
+        ...(t.explanation ? [`Reason: ${t.explanation}`] : []),
+      ].join("\n"));
+      const details = `${event.toolName}(${JSON.stringify(input, null, 2)})\n\n${[...new Set(reasons)].join("\n\n") || `Reason: ${decision.reason ?? "Policy requires approval"}`}`;
+      if (!(await confirm(ctx, "Allow tool call?", details))) {
+        return { block: true, reason: "Permission refused (or no UI / request too large to review). Do not retry or rephrase it." };
+      }
     }
     if (READ_TOOLS.has(event.toolName) || WRITE_TOOLS.has(event.toolName)) {
       const grants = READ_TOOLS.has(event.toolName) && decision.action === "ask" ? [describeGrant(raw ?? ".", c.root, home)] : [];

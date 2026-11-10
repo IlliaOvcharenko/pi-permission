@@ -1,7 +1,7 @@
 export const MODES = ["plan", "approve", "build", "yolo"] as const;
 export type Mode = (typeof MODES)[number];
 export type Action = "allow" | "ask" | "deny";
-export interface Trace { group: string; source: string; surface: string; pattern: string; action: Action }
+export interface Trace { group: string; source: string; surface: string; pattern: string; action: Action; ruleAction?: Action; command?: string; explanation?: string }
 export interface Decision { action: Action; reason?: string; trace?: Trace[] }
 export type Rule = Action | Record<string, Action>;
 export type Permission = Record<string, Rule>;

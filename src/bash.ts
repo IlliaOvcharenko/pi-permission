@@ -22,12 +22,13 @@ function literal(node: NodeLike): string | undefined {
   if (["word", "number"].includes(node.type) && !/[$`\\{}~*?\[\]]/.test(node.text)) return node.text;
   return undefined;
 }
-function evaluate(name: string, g: PermissionGroup, rule: Rule | undefined, words: string[] | undefined, narrowSafe: boolean, argumentSafe: boolean): Decision {
+function evaluate(name: string, g: PermissionGroup, rule: Rule | undefined, words: string[] | undefined, narrowSafe: boolean, argumentSafe: boolean, command: string, limitations: string[] = []): Decision {
   if (rule === undefined) return { action: "allow" };
   let action: Action = "allow", match: string | undefined;
+  let downgraded = false;
   if (typeof rule === "string") { action = rule; match = "*"; }
   else for (const [pattern, value] of Object.entries(rule ?? {})) {
-    if (pattern === "*") { action = value; match = pattern; continue; }
+    if (pattern === "*") { action = value; match = pattern; downgraded = false; continue; }
     if (!words?.length) continue;
     const expected = commandWords(pattern);
     const nameOnly = expected.length === 1;
@@ -37,47 +38,66 @@ function evaluate(name: string, g: PermissionGroup, rule: Rule | undefined, word
     if (!matches) continue;
     // Established denies survive unsupported shell surroundings. A name-only
     // rule can deny even when arguments are dynamic; it cannot narrowly allow.
-    action = value === "allow" && (!narrowSafe || (nameOnly && !argumentSafe)) ? "ask" : value;
+    downgraded = value === "allow" && (!narrowSafe || (nameOnly && !argumentSafe));
+    action = downgraded ? "ask" : value;
     match = pattern;
   }
   // Unknown structures require consent unless the effective rule is genuinely
   // unrestricted (* or scalar), not a parser-derived narrow allow.
   if (!narrowSafe && match === undefined) action = "ask";
-  return { action, reason: match ? `${name} (${g.source}): bash ${match} → ${action}` : "Unsupported Bash structure requires approval", ...(match ? { trace: [{ group: name, source: g.source, surface: "bash", pattern: match, action }] } : {}) };
+  const explanation = !narrowSafe || downgraded
+    ? [...new Set(limitations)].join("; ") || "Bash structure cannot be automatically approved"
+    : undefined;
+  return { action, reason: match ? `${name} (${g.source}): bash ${match} → ${action}` : "Unsupported Bash structure requires approval", trace: [{ group: name, source: g.source, surface: "bash", pattern: match ?? "(no matching rule)", action, ruleAction: downgraded ? "allow" : action, command, ...(explanation ? { explanation } : {}) }] };
 }
 export function classifyTree(root: NodeLike, ctx: PolicyContext): Decision {
   let unsupported = root.hasError === true;
-  const commands: { words?: string[]; safe: boolean; argumentsSafe: boolean }[] = [];
-  const walk = (node: NodeLike): void => {
+  const syntax: string[] = root.hasError ? ["Bash syntax contains a parse error"] : [];
+  const commands: { words?: string[]; safe: boolean; argumentsSafe: boolean; text: string; limitations: string[] }[] = [];
+  const walk = (node: NodeLike, unsupportedParent = false): void => {
+    const unknown = !CONTAINERS.has(node.type) && !LEAVES.has(node.type) && !SEPARATORS.has(node.type);
+    if (unknown) {
+      unsupported = true;
+      if (!unsupportedParent) syntax.push(`Unsupported ${node.type.replaceAll("_", " ")}: ${JSON.stringify(node.text)}`);
+    }
     if (node.type === "command") {
       const head = node.children.find(n => n.type === "command_name");
       const executable = head && (head.children.length === 1 ? literal(head.children[0]) : /^[\w./-]+$/.test(head.text) ? head.text : undefined);
       let safe = !!executable, argumentsSafe = !!executable && UNDERSTOOD_ARGUMENTS.has(executable);
       const args: string[] = [];
+      const limitations: string[] = [];
+      if (!executable) limitations.push(`Dynamic executable: ${JSON.stringify(head?.text ?? node.text)}`);
+      else if (!argumentsSafe) limitations.push(`Arguments for ${JSON.stringify(executable)} require an exact argument rule`);
       for (const n of node.children) {
         if (n === head) continue;
         const value = literal(n);
-        if (value === undefined) { safe = false; continue; }
+        if (value === undefined) { safe = false; limitations.push(`Non-literal argument: ${JSON.stringify(n.text)}`); continue; }
         args.push(value);
-        if (EXEC_FLAGS.test(value) || ["-L", "--follow", "-R", "--dereference-recursive", "-z"].includes(value) || (executable && ["fd", "fdfind"].includes(executable) && /^-[^-]*[xX]/.test(value))) argumentsSafe = false;
+        if (EXEC_FLAGS.test(value) || ["-L", "--follow", "-R", "--dereference-recursive", "-z"].includes(value) || (executable && ["fd", "fdfind"].includes(executable) && /^-[^-]*[xX]/.test(value))) {
+          argumentsSafe = false;
+          limitations.push(`Argument requires explicit approval: ${JSON.stringify(n.text)}`);
+        }
         const candidate = value.startsWith("-") && value.includes("=") ? value.slice(value.indexOf("=") + 1) : value;
         try {
           if (/^(?:\/|~\/|\.\.?\/)/.test(candidate) || (!candidate.startsWith("-") && existsSync(absolutePath(ctx.root, candidate, ctx.home)))) {
-            if (readDecision(ctx, candidate).action !== "allow") argumentsSafe = false;
+            const read = readDecision(ctx, candidate);
+            if (read.action !== "allow") {
+              argumentsSafe = false;
+              limitations.push(`Path ${JSON.stringify(candidate)}: ${read.reason ?? "read access requires approval"}`);
+            }
           }
-        } catch { argumentsSafe = false; } // Keep established denies in other components.
+        } catch { argumentsSafe = false; limitations.push(`Cannot classify path: ${JSON.stringify(candidate)}`); } // Keep established denies in other components.
       }
       if (safe && args.length === 0) argumentsSafe = true;
-      commands.push({ words: executable ? [executable, ...args] : undefined, safe, argumentsSafe });
+      commands.push({ words: executable ? [executable, ...args] : undefined, safe, argumentsSafe, text: node.text || [executable, ...args].filter(Boolean).join(" "), limitations });
     }
-    if (!CONTAINERS.has(node.type) && !LEAVES.has(node.type) && !SEPARATORS.has(node.type)) unsupported = true;
-    for (const child of node.children) walk(child);
+    for (const child of node.children) walk(child, unsupportedParent || unknown);
   };
   walk(root);
   return strictest(...selectedGroups(ctx).map(([name, g]) => {
     const rule = g["tool-parser"]?.bash ?? g["tool-parser"]?.["*"];
-    if (!commands.length) return evaluate(name, g, rule, undefined, false, false);
-    return strictest(...commands.map(c => evaluate(name, g, rule, c.words, !unsupported && c.safe, c.argumentsSafe)));
+    if (!commands.length) return evaluate(name, g, rule, undefined, false, false, root.text, syntax);
+    return strictest(...commands.map(c => evaluate(name, g, rule, c.words, !unsupported && c.safe, c.argumentsSafe, c.text, [...syntax, ...c.limitations])));
   }));
 }
 let parserPromise: Promise<ParserLike | undefined> | undefined;
@@ -100,5 +120,5 @@ export async function bashDecision(command: string, ctx: PolicyContext, parser?:
     if (tree) return classifyTree(tree.rootNode, ctx);
   } catch { /* Fall back only to explicit broad consent, never a narrow allow. */ }
   finally { tree?.delete?.(); }
-  return strictest(...selectedGroups(ctx).map(([n, g]) => evaluate(n, g, g["tool-parser"]?.bash ?? g["tool-parser"]?.["*"], undefined, false, false)));
+  return strictest(...selectedGroups(ctx).map(([n, g]) => evaluate(n, g, g["tool-parser"]?.bash ?? g["tool-parser"]?.["*"], undefined, false, false, command, ["Bash parser unavailable or failed to parse this request"])));
 }

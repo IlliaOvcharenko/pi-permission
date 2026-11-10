@@ -82,6 +82,12 @@ Use scalar actions or compact ordered pattern maps. Permission `*` crosses `/`,
 first as a fallback. A named tool replaces only its own group's tool wildcard.
 Adding an allow group cannot cancel another selected group's ask/deny.
 
+Approval dialogs show the complete `toolName({...parameters})` call, followed by
+only approval-requiring rules and Bash commands, with the exact syntax/argument
+fragment when parser limits prevent automatic approval. No raw trace JSON is
+shown. Choose Allow once, Allow for session (same request), or Deny. Requests
+without UI or over the review-size limit refuse rather than being truncated.
+
 Bash patterns now match **parsed commands and argument boundaries**, not whole
 submitted source. `npm test` is exact; `npm test *` permits extra arguments.
 Every command in a supported pipeline/list is evaluated. Unsupported syntax,

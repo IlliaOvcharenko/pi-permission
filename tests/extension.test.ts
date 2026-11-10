@@ -139,6 +139,28 @@ test("custom tools default allow; explicit ask respects denial", async () => {
     assert.equal((await h.call("unknown", { action: "run" })).block, true);
     assert.equal(await h.call("web_enable", {}), undefined);
     assert.equal(h.prompts.length, 1);
+    assert.equal(h.prompts[0], 'Allow tool call?\nunknown({\n  "action": "run"\n})\n\nRule: consent → unknown "*" → ask');
+  } finally { await h.cleanup(); }
+});
+test("approval prompt shows the complete call and only commands requiring consent", async () => {
+  const h = harness();
+  try {
+    h.configure({ defaultMode: "build" });
+    await h.start();
+    const input = { command: "ls && python script.py", timeout: 30 };
+    assert.equal(await h.call("bash", input), undefined);
+    const prompt = h.prompts.at(-1)!;
+    assert.ok(prompt.startsWith(`Allow tool call?\nbash(${JSON.stringify(input, null, 2)})\n\n`));
+    assert.ok(prompt.includes("Approval required for: python script.py"));
+    assert.ok(prompt.includes('Rule: development → bash "*" → ask'));
+    assert.ok(!prompt.includes("Approval required for: ls"));
+    assert.ok(!prompt.includes('"source"'));
+    assert.ok(!prompt.includes('"action"'));
+    const count = h.prompts.length;
+    assert.equal((await h.call("bash", { command: "python " + "x".repeat(17000) })).block, true);
+    assert.equal(h.prompts.length, count, "oversized requests refuse without truncating the call");
+    h.ctx.hasUI = false;
+    assert.equal((await h.call("bash", { command: "python other.py" })).block, true);
   } finally { await h.cleanup(); }
 });
 test("recursive file tools omit denied directories and descendant symlinks", async () => {
