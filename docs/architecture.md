@@ -73,9 +73,12 @@ Full field and precedence contracts: [configs.md](configs.md).
 ## Prompts, colors and sessions
 
 - `src/prompts.ts` refreshes only `pi_permission_*` and explicitly configured known legacy
-  sections before each turn. Generated runtime facts list selected groups/sources,
-  parser rules, filesystem policy and Bash restrictions separately. They cannot be
-  overridden. Shared/mode prompt text is advisory, not a permission grant.
+  sections before each turn. Generated runtime facts describe active tool/skill
+  permissions, filesystem policy and Bash restrictions without group names, config
+  source paths or layering details. Independently evaluated maps/read policies remain
+  separate anonymous rule sets; identical rendered sets are deduplicated, not flattened.
+  Provenance stays in config/status diagnostics and decision traces. Runtime facts cannot
+  be overridden. Shared/mode prompt text is advisory, not a permission grant.
 - Approve chat confirmation, re-reading and requested-only Plan edits remain
   behavioral. Plan extensions/Bash roots are editable shipped policy.
 - Strict mode `#RRGGBB` values render through concrete RGB `theme.style`; existing

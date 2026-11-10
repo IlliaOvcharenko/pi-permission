@@ -139,8 +139,11 @@ activate only on successful startup or `/reload`. Already running commands keep
 their launch profile. Invalid reload never partially activates a policy.
 
 The extension refreshes `pi_permission_*` prompt sections before every turn.
-`pi_permission_runtime` is generated and cannot be replaced/disabled. Other shared/mode
-prose and extra namespaced sections are editable; `@file` text loads on reload.
+`pi_permission_runtime` is generated and cannot be replaced/disabled. It describes
+active permissions without permission-group names, config source paths or layering
+details. Independent rule sets remain separate where needed for correct composition;
+provenance remains available through config/status diagnostics and decision traces.
+Other shared/mode prose and extra namespaced sections are editable; `@file` text loads on reload.
 Unrelated prompt sections are preserved. See the configuration reference for
 explicit section-field merge rules.
 

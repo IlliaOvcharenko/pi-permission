@@ -74,7 +74,10 @@ Global configuration is **not an administrator ceiling**. This requires trusted
 project loading, not tighten-only semantics. Group source files and mode-field
 sources appear in `/pi-permission config`; `replacements` explains which defining source
 replaced each earlier group and `promptSources` retains defining files for prompt
-fields. Selected group sources appear in status and runtime facts.
+fields. Selected group sources appear in status diagnostics, not the generated model
+prompt. Runtime facts omit group names, config source paths and layering mechanics;
+independent tool/skill maps and read-root policies remain anonymous rule sets with
+strictest-action composition, rather than being flattened into one last-match map.
 
 ## Pattern maps and independent groups
 
